@@ -27,6 +27,7 @@ import {
   uploadBytes, 
   getDownloadURL 
 } from 'firebase/storage';
+import { SUPER_ADMIN_EMAILS } from '../data/rolesData';
 
 // Production Firebase Configuration for WCA Tickets
 const firebaseConfig = {
@@ -63,6 +64,64 @@ export const signInWithGoogle = async () => {
 
 export const logoutUser = () => signOut(auth);
 
+// Synchronize user profile in Firestore
+export const syncUserProfile = async (user) => {
+  if (!user) return null;
+  const userRef = doc(db, 'users', user.uid);
+  const userSnap = await getDoc(userRef);
+  const emailLower = (user.email || '').toLowerCase();
+  const isSuperAdmin = SUPER_ADMIN_EMAILS.includes(emailLower);
+
+  if (!userSnap.exists()) {
+    const initialRole = isSuperAdmin ? 'admin' : 'requester';
+    const newUserData = {
+      uid: user.uid,
+      email: user.email,
+      displayName: user.displayName || user.email.split('@')[0],
+      photoURL: user.photoURL || null,
+      role: initialRole,
+      department: 'general',
+      createdAt: serverTimestamp(),
+      lastLogin: serverTimestamp()
+    };
+    await setDoc(userRef, newUserData);
+    return newUserData;
+  } else {
+    const existingData = userSnap.data();
+    const updates = {
+      displayName: user.displayName || existingData.displayName,
+      photoURL: user.photoURL || existingData.photoURL,
+      lastLogin: serverTimestamp()
+    };
+    // Ensure super admin always keeps admin role
+    if (isSuperAdmin && existingData.role !== 'admin') {
+      updates.role = 'admin';
+    }
+    await updateDoc(userRef, updates);
+    return { ...existingData, ...updates };
+  }
+};
+
+// Listen to current user's profile
+export const subscribeToUserProfile = (uid, callback) => {
+  if (!uid) return () => {};
+  return onSnapshot(doc(db, 'users', uid), (docSnap) => {
+    if (docSnap.exists()) {
+      callback(docSnap.data());
+    }
+  });
+};
+
+// Admin: Update another user's role
+export const updateUserRole = async (targetUid, newRole, department = 'general') => {
+  const userRef = doc(db, 'users', targetUid);
+  await updateDoc(userRef, {
+    role: newRole,
+    department,
+    updatedAt: serverTimestamp()
+  });
+};
+
 // Ticket creation helper
 export const submitTicket = async (ticketData, files = []) => {
   try {
@@ -82,7 +141,7 @@ export const submitTicket = async (ticketData, files = []) => {
           type: file.type
         });
       } catch (uploadErr) {
-        console.warn("Storage upload error (may require storage activation):", uploadErr);
+        console.warn("Storage upload error:", uploadErr);
       }
     }
 

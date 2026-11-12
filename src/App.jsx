@@ -1,24 +1,47 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, signInWithGoogle } from './services/firebase';
+import { auth, signInWithGoogle, syncUserProfile, subscribeToUserProfile } from './services/firebase';
 import Navbar from './components/Navbar';
 import LandingAreaPicker from './components/LandingAreaPicker';
 import TicketSubmissionForm from './components/TicketSubmissionForm';
 import TicketDashboard from './components/TicketDashboard';
-import { ShieldCheck, LogIn, Heart } from 'lucide-react';
+import UserManagement from './components/UserManagement';
 
 export default function App() {
   const [user, setUser] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [currentView, setCurrentView] = useState('submit'); // 'submit' | 'dashboard' | 'my-tickets'
+  const [currentView, setCurrentView] = useState('submit'); // 'submit' | 'dashboard' | 'my-tickets' | 'users'
   const [selectedArea, setSelectedArea] = useState(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    let unsubscribeProfile = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      if (currentUser) {
+        try {
+          const profile = await syncUserProfile(currentUser);
+          setUserProfile(profile);
+
+          // Subscribe to live role changes
+          unsubscribeProfile = subscribeToUserProfile(currentUser.uid, (updatedProfile) => {
+            setUserProfile(updatedProfile);
+          });
+        } catch (err) {
+          console.warn("Error syncing user profile:", err);
+        }
+      } else {
+        setUserProfile(null);
+        if (unsubscribeProfile) unsubscribeProfile();
+      }
       setAuthLoading(false);
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeProfile) unsubscribeProfile();
+    };
   }, []);
 
   const handleSelectArea = (area) => {
@@ -30,7 +53,7 @@ export default function App() {
   };
 
   const handleTicketCreated = () => {
-    // Optionally switch to my-tickets or stay on success screen
+    // Keep on success view inside the form
   };
 
   return (
@@ -38,6 +61,7 @@ export default function App() {
       {/* Top Navigation */}
       <Navbar 
         user={user} 
+        userProfile={userProfile}
         currentView={currentView} 
         setCurrentView={(view) => {
           setCurrentView(view);
@@ -63,14 +87,29 @@ export default function App() {
           </div>
         )}
 
-        {/* View 2: Technician / Staff Queue Dashboard */}
+        {/* View 2: Staff / Technician Queue Dashboard */}
         {currentView === 'dashboard' && (
-          <TicketDashboard user={user} filterByMyTickets={false} />
+          <TicketDashboard 
+            user={user} 
+            userProfile={userProfile}
+            filterByMyTickets={false} 
+          />
         )}
 
         {/* View 3: My Tickets */}
         {currentView === 'my-tickets' && (
-          <TicketDashboard user={user} filterByMyTickets={true} />
+          <TicketDashboard 
+            user={user} 
+            userProfile={userProfile}
+            filterByMyTickets={true} 
+          />
+        )}
+
+        {/* View 4: User Management (Admin Only) */}
+        {currentView === 'users' && userProfile?.role === 'admin' && (
+          <UserManagement 
+            currentUser={user} 
+          />
         )}
       </main>
 
@@ -83,7 +122,7 @@ export default function App() {
             <span>Facilities, Housekeeping & ITSM Service Portal</span>
           </div>
           <div className="flex items-center gap-1 text-slate-500">
-            <span>Built for West Central Area Schools</span>
+            <span>West Central Area Schools</span>
           </div>
         </div>
       </footer>

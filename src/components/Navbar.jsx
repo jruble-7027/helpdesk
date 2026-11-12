@@ -1,8 +1,14 @@
 import React from 'react';
-import { LogIn, LogOut, Ticket, LayoutDashboard, Shield, User as UserIcon } from 'lucide-react';
+import { LogIn, LogOut, Ticket, LayoutDashboard, Shield, User as UserIcon, Users } from 'lucide-react';
 import { signInWithGoogle, logoutUser } from '../services/firebase';
+import { ROLES } from '../data/rolesData';
 
-export default function Navbar({ user, currentView, setCurrentView, isAdminOrTech }) {
+export default function Navbar({ user, userProfile, currentView, setCurrentView }) {
+  const role = userProfile?.role || 'requester';
+  const roleConfig = ROLES[role] || ROLES.requester;
+  const isAdmin = role === 'admin';
+  const isStaffOrTech = ['admin', 'agent', 'facilities_tech', 'housekeeping_tech', 'it_tech'].includes(role);
+
   return (
     <header className="bg-slate-900 text-white shadow-md border-b border-slate-800 sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -24,12 +30,12 @@ export default function Navbar({ user, currentView, setCurrentView, isAdminOrTec
           </div>
 
           {/* Navigation Links */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               onClick={() => setCurrentView('submit')}
-              className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
                 currentView === 'submit'
-                  ? 'bg-amber-500 text-slate-950 font-semibold shadow-sm'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
                   : 'text-slate-300 hover:text-white hover:bg-slate-800'
               }`}
             >
@@ -40,9 +46,9 @@ export default function Navbar({ user, currentView, setCurrentView, isAdminOrTec
             {user && (
               <button
                 onClick={() => setCurrentView('my-tickets')}
-                className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
                   currentView === 'my-tickets'
-                    ? 'bg-amber-500 text-slate-950 font-semibold shadow-sm'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
                     : 'text-slate-300 hover:text-white hover:bg-slate-800'
                 }`}
               >
@@ -51,24 +57,45 @@ export default function Navbar({ user, currentView, setCurrentView, isAdminOrTec
               </button>
             )}
 
-            <button
-              onClick={() => setCurrentView('dashboard')}
-              className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                currentView === 'dashboard'
-                  ? 'bg-amber-500 text-slate-950 font-semibold shadow-sm'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
-              }`}
-            >
-              <LayoutDashboard className="w-4 h-4" />
-              <span>Staff Queue</span>
-            </button>
+            {isStaffOrTech && (
+              <button
+                onClick={() => setCurrentView('dashboard')}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+                  currentView === 'dashboard'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <LayoutDashboard className="w-4 h-4" />
+                <span>Staff Queue</span>
+              </button>
+            )}
+
+            {isAdmin && (
+              <button
+                onClick={() => setCurrentView('users')}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+                  currentView === 'users'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                <span>User Roles</span>
+              </button>
+            )}
 
             {/* User Profile / Auth Button */}
             <div className="pl-2 border-l border-slate-700 ml-1">
               {user ? (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3">
                   <div className="hidden lg:flex flex-col text-right">
-                    <span className="text-xs font-semibold text-white leading-tight">{user.displayName || user.email}</span>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span className="text-xs font-semibold text-white leading-tight">{user.displayName || user.email}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold border ${roleConfig.badge}`}>
+                        {roleConfig.label}
+                      </span>
+                    </div>
                     <span className="text-[10px] text-amber-400">{user.email}</span>
                   </div>
                   {user.photoURL ? (
@@ -93,7 +120,7 @@ export default function Navbar({ user, currentView, setCurrentView, isAdminOrTec
               ) : (
                 <button
                   onClick={signInWithGoogle}
-                  className="flex items-center gap-2 px-3 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-sm font-semibold transition-all shadow-sm"
+                  className="flex items-center gap-2 px-3 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs sm:text-sm font-bold transition-all shadow-sm"
                 >
                   <LogIn className="w-4 h-4" />
                   <span>Google Sign-In</span>
