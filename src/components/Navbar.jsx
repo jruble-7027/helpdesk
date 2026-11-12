@@ -1,5 +1,5 @@
 import React from 'react';
-import { LogIn, LogOut, Ticket, LayoutDashboard, Shield, User as UserIcon, Users } from 'lucide-react';
+import { LogIn, LogOut, Ticket, LayoutDashboard, Shield, User as UserIcon, Users, Sliders } from 'lucide-react';
 import { signInWithGoogle, logoutUser } from '../services/firebase';
 import { ROLES } from '../data/rolesData';
 
@@ -72,17 +72,30 @@ export default function Navbar({ user, userProfile, currentView, setCurrentView 
             )}
 
             {isAdmin && (
-              <button
-                onClick={() => setCurrentView('users')}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
-                  currentView === 'users'
-                    ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                <Users className="w-4 h-4" />
-                <span>User Roles</span>
-              </button>
+              <>
+                <button
+                  onClick={() => setCurrentView('users')}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+                    currentView === 'users'
+                      ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  <span>User Roles</span>
+                </button>
+                <button
+                  onClick={() => setCurrentView('customizer')}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+                    currentView === 'customizer'
+                      ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <Sliders className="w-4 h-4" />
+                  <span>Customize Fields</span>
+                </button>
+              </>
             )}
 
             {/* User Profile / Auth Button */}

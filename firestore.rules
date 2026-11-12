@@ -13,5 +13,11 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if request.auth != null;
     }
+
+    // Settings collection (Catalog: buildings, asset types, predefined issues)
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
   }
 }

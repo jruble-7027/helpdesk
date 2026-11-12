@@ -16,8 +16,9 @@ import {
 import { URGENCY_LEVELS, BUILDINGS } from '../data/categoriesData';
 import { submitTicket } from '../services/firebase';
 
-export default function TicketSubmissionForm({ area, user, onBack, onTicketCreated }) {
-  const [building, setBuilding] = useState(BUILDINGS[0]);
+export default function TicketSubmissionForm({ area, buildingsList, user, onBack, onTicketCreated }) {
+  const availableBuildings = buildingsList && buildingsList.length > 0 ? buildingsList : BUILDINGS;
+  const [building, setBuilding] = useState(availableBuildings[0] || 'High School');
   const [roomLocation, setRoomLocation] = useState('');
   const [assetType, setAssetType] = useState(area.assetTypes[0]?.name || '');
   const [assetTag, setAssetTag] = useState('');
@@ -248,7 +249,7 @@ export default function TicketSubmissionForm({ area, user, onBack, onTicketCreat
                   onChange={(e) => setBuilding(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white"
                 >
-                  {BUILDINGS.map((b) => (
+                  {availableBuildings.map((b) => (
                     <option key={b} value={b}>{b}</option>
                   ))}
                 </select>

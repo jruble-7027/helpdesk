@@ -8,7 +8,9 @@ const iconMap = {
   Laptop: Laptop,
 };
 
-export default function LandingAreaPicker({ onSelectArea }) {
+export default function LandingAreaPicker({ onSelectArea, areasList }) {
+  const displayAreas = areasList && areasList.length > 0 ? areasList : AREAS;
+
   return (
     <div className="max-w-5xl mx-auto py-8 sm:py-12 px-4 sm:px-6">
       <div className="text-center mb-10 sm:mb-14">
@@ -24,7 +26,7 @@ export default function LandingAreaPicker({ onSelectArea }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
-        {AREAS.map((area) => {
+        {displayAreas.map((area) => {
           const IconComponent = iconMap[area.icon] || Wrench;
           return (
             <div

@@ -28,6 +28,7 @@ import {
   getDownloadURL 
 } from 'firebase/storage';
 import { SUPER_ADMIN_EMAILS } from '../data/rolesData';
+import { AREAS as DEFAULT_AREAS, BUILDINGS as DEFAULT_BUILDINGS } from '../data/categoriesData';
 
 // Production Firebase Configuration for WCA Tickets
 const firebaseConfig = {
@@ -120,6 +121,42 @@ export const updateUserRole = async (targetUid, newRole, department = 'general')
     department,
     updatedAt: serverTimestamp()
   });
+};
+
+// --- Custom Catalog & Settings (Buildings, Asset Lists, Pre-Defined Issues) ---
+
+export const subscribeToCatalog = (callback) => {
+  const catalogRef = doc(db, 'settings', 'catalog');
+  return onSnapshot(catalogRef, async (docSnap) => {
+    if (docSnap.exists()) {
+      callback(docSnap.data());
+    } else {
+      // Auto-seed initial defaults into Firestore
+      const initialCatalog = {
+        buildings: DEFAULT_BUILDINGS,
+        areas: DEFAULT_AREAS,
+        updatedAt: serverTimestamp()
+      };
+      try {
+        await setDoc(catalogRef, initialCatalog);
+        callback({ buildings: DEFAULT_BUILDINGS, areas: DEFAULT_AREAS });
+      } catch (err) {
+        console.warn("Could not seed settings/catalog:", err);
+        callback({ buildings: DEFAULT_BUILDINGS, areas: DEFAULT_AREAS });
+      }
+    }
+  }, (err) => {
+    console.warn("Catalog listener fallback to defaults:", err);
+    callback({ buildings: DEFAULT_BUILDINGS, areas: DEFAULT_AREAS });
+  });
+};
+
+export const saveCatalogSettings = async (catalogData) => {
+  const catalogRef = doc(db, 'settings', 'catalog');
+  await setDoc(catalogRef, {
+    ...catalogData,
+    updatedAt: serverTimestamp()
+  }, { merge: true });
 };
 
 // Ticket creation helper

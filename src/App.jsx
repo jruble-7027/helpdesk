@@ -1,18 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, signInWithGoogle, syncUserProfile, subscribeToUserProfile } from './services/firebase';
+import { auth, signInWithGoogle, syncUserProfile, subscribeToUserProfile, subscribeToCatalog } from './services/firebase';
+import { AREAS, BUILDINGS } from './data/categoriesData';
 import Navbar from './components/Navbar';
 import LandingAreaPicker from './components/LandingAreaPicker';
 import TicketSubmissionForm from './components/TicketSubmissionForm';
 import TicketDashboard from './components/TicketDashboard';
 import UserManagement from './components/UserManagement';
+import FieldCustomizer from './components/FieldCustomizer';
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [currentView, setCurrentView] = useState('submit'); // 'submit' | 'dashboard' | 'my-tickets' | 'users'
+  const [currentView, setCurrentView] = useState('submit'); // 'submit' | 'dashboard' | 'my-tickets' | 'users' | 'customizer'
   const [selectedArea, setSelectedArea] = useState(null);
+  const [catalog, setCatalog] = useState({ buildings: BUILDINGS, areas: AREAS });
+
+  useEffect(() => {
+    // Subscribe to dynamic fields/issues catalog
+    const unsubscribeCatalog = subscribeToCatalog((catData) => {
+      if (catData) {
+        setCatalog(catData);
+      }
+    });
+
+    return () => {
+      if (unsubscribeCatalog) unsubscribeCatalog();
+    };
+  }, []);
 
   useEffect(() => {
     let unsubscribeProfile = null;
@@ -75,10 +91,14 @@ export default function App() {
         {currentView === 'submit' && (
           <div>
             {!selectedArea ? (
-              <LandingAreaPicker onSelectArea={handleSelectArea} />
+              <LandingAreaPicker 
+                onSelectArea={handleSelectArea} 
+                areasList={catalog.areas}
+              />
             ) : (
               <TicketSubmissionForm 
-                area={selectedArea}
+                area={catalog.areas?.find((a) => a.id === selectedArea.id) || selectedArea}
+                buildingsList={catalog.buildings}
                 user={user}
                 onBack={handleBackToLanding}
                 onTicketCreated={handleTicketCreated}
@@ -109,6 +129,14 @@ export default function App() {
         {currentView === 'users' && userProfile?.role === 'admin' && (
           <UserManagement 
             currentUser={user} 
+          />
+        )}
+
+        {/* View 5: Field & Issue Customizer (Admin Only) */}
+        {currentView === 'customizer' && userProfile?.role === 'admin' && (
+          <FieldCustomizer 
+            catalog={catalog}
+            onCatalogUpdate={(updated) => setCatalog(updated)}
           />
         )}
       </main>
