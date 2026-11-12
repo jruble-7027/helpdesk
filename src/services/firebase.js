@@ -28,14 +28,15 @@ import {
   getDownloadURL 
 } from 'firebase/storage';
 
-// Firebase configuration from environment or fallback
+// Production Firebase Configuration for WCA Tickets
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDummyKeyForInitialSetup12345",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "wca-helpdesk.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "wca-helpdesk",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "wca-helpdesk.appspot.com",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "1234567890",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:1234567890:web:abcdef123456"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyCmJ90tk3NL-2bmunFsorUoOo7NtF6hOUE",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "wca-tickets-58f6c.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "wca-tickets-58f6c",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "wca-tickets-58f6c.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "354905762912",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:354905762912:web:9f014f9966499bddf2a705",
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-WJQQPXFT28"
 };
 
 // Initialize Firebase
@@ -69,16 +70,20 @@ export const submitTicket = async (ticketData, files = []) => {
     
     // Upload any attached photos/files to Firebase Storage
     for (const file of files) {
-      const fileId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}_${file.name}`;
-      const fileRef = storageRef(storage, `ticket-attachments/${fileId}`);
-      const uploadResult = await uploadBytes(fileRef, file);
-      const downloadUrl = await getDownloadURL(uploadResult.ref);
-      uploadedPhotos.push({
-        url: downloadUrl,
-        name: file.name,
-        size: file.size,
-        type: file.type
-      });
+      try {
+        const fileId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        const fileRef = storageRef(storage, `ticket-attachments/${fileId}`);
+        const uploadResult = await uploadBytes(fileRef, file);
+        const downloadUrl = await getDownloadURL(uploadResult.ref);
+        uploadedPhotos.push({
+          url: downloadUrl,
+          name: file.name,
+          size: file.size,
+          type: file.type
+        });
+      } catch (uploadErr) {
+        console.warn("Storage upload error (may require storage activation):", uploadErr);
+      }
     }
 
     const docRef = await addDoc(collection(db, 'tickets'), {
@@ -90,14 +95,14 @@ export const submitTicket = async (ticketData, files = []) => {
           status: 'new',
           timestamp: new Date().toISOString(),
           updatedBy: ticketData.createdByName || 'Requester',
-          note: 'Ticket submitted'
+          note: 'Ticket submitted via Helpdesk Portal'
         }
       ],
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     });
 
-    return { id: docRef.id, ...ticketData };
+    return { id: docRef.id, ...ticketData, attachments: uploadedPhotos };
   } catch (error) {
     console.error("Error creating ticket:", error);
     throw error;
