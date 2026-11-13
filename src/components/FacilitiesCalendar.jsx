@@ -1,10 +1,24 @@
-import React, { useState, useRef } from 'react';
-import { Calendar, RefreshCw, ExternalLink, Printer, Sparkles, Building, Clock, Info, CheckCircle2 } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Calendar, RefreshCw, ExternalLink, Printer, Sparkles, Building, Clock, Info, CheckCircle2, Sliders, X, Check, Code } from 'lucide-react';
 
-export default function FacilitiesCalendar({ onNavigateToSubmit }) {
+export default function FacilitiesCalendar({ 
+  onNavigateToSubmit, 
+  calendarViewId = "534e7bd4-91df-f111-bf5b-6045bdb05b62", 
+  onUpdateCalendarViewId,
+  isAdmin = false 
+}) {
+  const [activeViewId, setActiveViewId] = useState(calendarViewId);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [inputSnippetOrId, setInputSnippetOrId] = useState(calendarViewId);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const iframeRef = useRef(null);
+
+  useEffect(() => {
+    setActiveViewId(calendarViewId);
+    setInputSnippetOrId(calendarViewId);
+  }, [calendarViewId]);
 
   const handleRefresh = () => {
     setLoading(true);
@@ -20,6 +34,31 @@ export default function FacilitiesCalendar({ onNavigateToSubmit }) {
     }
   };
 
+  const handleSaveFilter = async () => {
+    let cleanId = inputSnippetOrId.trim();
+    // Check if user pasted the full Incident IQ script with viewId: "..."
+    const match = cleanId.match(/viewId\s*:\s*["']([^"']+)["']/i);
+    if (match && match[1]) {
+      cleanId = match[1].trim();
+    }
+    // Remove any trailing/leading quotes
+    cleanId = cleanId.replace(/^["']|["']$/g, '');
+
+    if (!cleanId) return;
+
+    setActiveViewId(cleanId);
+    setInputSnippetOrId(cleanId);
+    if (onUpdateCalendarViewId) {
+      await onUpdateCalendarViewId(cleanId);
+    }
+    setSaveSuccess(true);
+    setRefreshKey(prev => prev + 1);
+    setTimeout(() => {
+      setSaveSuccess(false);
+      setShowConfigModal(false);
+    }, 1200);
+  };
+
   // Safe, verified HTML payload that handles Incident IQ's FullCalendar without 500 error
   const calendarHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -33,7 +72,7 @@ export default function FacilitiesCalendar({ onNavigateToSubmit }) {
     body {
       margin: 0;
       padding: 16px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-family: 'proxima-nova', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       background-color: #ffffff;
       color: #0f172a;
     }
@@ -151,7 +190,7 @@ export default function FacilitiesCalendar({ onNavigateToSubmit }) {
 
   <script>
     var origin = "https://wcatrojans.incidentiq.com";
-    var viewId = "534e7bd4-91df-f111-bf5b-6045bdb05b62";
+    var viewId = "${activeViewId || '534e7bd4-91df-f111-bf5b-6045bdb05b62'}";
 
     function hideLoader() {
       var loader = document.getElementById('loading-state');
@@ -160,20 +199,22 @@ export default function FacilitiesCalendar({ onNavigateToSubmit }) {
       if (cal) cal.style.display = 'block';
     }
 
-    // Direct verified payload fetch to avoid Incident IQ Upcoming parameter crash
-    fetch(origin + '/api/event/events', {
-      method: 'POST',
+    var payload = {
+      FilterByProduct: true,
+      ViewId: viewId
+    };
+
+    fetch(origin + "/api/event/events", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
+        "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        FilterByProduct: true,
-        ViewId: viewId
-      })
+      body: JSON.stringify(payload)
     })
     .then(function(res) {
-      if (!res.ok) throw new Error('Network response was not ok');
+      if (!res.ok) {
+        throw new Error("HTTP error " + res.status);
+      }
       return res.text();
     })
     .then(function(html) {
@@ -199,7 +240,7 @@ export default function FacilitiesCalendar({ onNavigateToSubmit }) {
       console.error("Error loading events calendar:", err);
       var loader = document.getElementById('loading-state');
       if (loader) {
-        loader.innerHTML = '<div style="color:#ef4444; font-weight:600;">Unable to load schedule from Incident IQ.</div><div style="font-size:12px; margin-top:4px;">Please try refreshing or visit Incident IQ directly.</div>';
+        loader.innerHTML = '<div style="color:#ef4444; font-weight:600;">Unable to load schedule from Incident IQ.</div><div style="font-size:12px; margin-top:4px;">Please try refreshing or verify the View ID filter.</div>';
       }
     });
   </script>
@@ -235,7 +276,7 @@ export default function FacilitiesCalendar({ onNavigateToSubmit }) {
               </span>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
                 <Building className="w-3.5 h-3.5 text-slate-500" />
-                Filtered: Setup Events Only
+                View ID: <code className="font-mono text-[11px] bg-white px-1.5 py-0.5 rounded border border-slate-200 text-slate-800 font-bold">{activeViewId ? activeViewId.substring(0, 13) + '...' : 'Default'}</code>
               </span>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200/60">
                 <Clock className="w-3.5 h-3.5 text-amber-600" />
@@ -246,6 +287,17 @@ export default function FacilitiesCalendar({ onNavigateToSubmit }) {
 
           {/* Action Toolbar */}
           <div className="flex items-center gap-2 flex-wrap">
+            {isAdmin && (
+              <button
+                onClick={() => setShowConfigModal(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 transition-all shadow-sm"
+                title="Configure Incident IQ View ID or paste new embed code"
+              >
+                <Sliders className="w-4 h-4 text-amber-700" />
+                <span>Filter Settings</span>
+              </button>
+            )}
+
             <button
               onClick={handleRefresh}
               disabled={loading}
@@ -311,9 +363,9 @@ export default function FacilitiesCalendar({ onNavigateToSubmit }) {
             <CheckCircle2 className="w-4 h-4" />
           </div>
           <div className="text-xs">
-            <h4 className="font-bold text-slate-800 mb-0.5">Auto-Filtered for Setup</h4>
+            <h4 className="font-bold text-slate-800 mb-0.5">Customizable Incident IQ Filter</h4>
             <p className="text-slate-500 leading-relaxed">
-              This calendar is pre-filtered by Incident IQ View ID <code className="font-mono bg-slate-100 px-1 py-0.5 rounded">534e7bd4...</code> so staff only see actionable setups.
+              Admins can update the calendar filter anytime by clicking <span className="font-semibold text-slate-700">Filter Settings</span> above or pasting new embed code.
             </p>
           </div>
         </div>
@@ -339,6 +391,73 @@ export default function FacilitiesCalendar({ onNavigateToSubmit }) {
         </div>
 
       </div>
+
+      {/* Filter Configuration Modal for Admins */}
+      {showConfigModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden animate-fadeIn">
+            <div className="bg-[#0b1c2d] px-6 py-4 flex items-center justify-between text-white">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-amber-400" />
+                <h3 className="font-extrabold text-base tracking-wide">Incident IQ Calendar Filter</h3>
+              </div>
+              <button 
+                onClick={() => setShowConfigModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                If you ever change your calendar view or event filter inside Incident IQ, you can update it here. You can paste either the <span className="font-bold text-slate-800">raw View ID</span> or the <span className="font-bold text-slate-800">entire embedded script</span> provided by Incident IQ (we'll extract the ID automatically!).
+              </p>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
+                  <Code className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Incident IQ View ID or Embed Code</span>
+                </label>
+                <textarea
+                  rows={4}
+                  value={inputSnippetOrId}
+                  onChange={(e) => setInputSnippetOrId(e.target.value)}
+                  placeholder="Paste View ID (e.g. 534e7bd4-91df-f111-bf5b-6045bdb05b62) or full Incident IQ embed code snippet..."
+                  className="w-full text-xs font-mono p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Current Active ID: <span className="font-mono text-slate-600">{activeViewId}</span>
+                </p>
+              </div>
+
+              {saveSuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span className="font-bold">Calendar filter updated and reloaded successfully!</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowConfigModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveFilter}
+                  className="px-5 py-2 text-xs font-black bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl transition-colors shadow-md shadow-amber-500/20"
+                >
+                  Save & Apply Filter
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

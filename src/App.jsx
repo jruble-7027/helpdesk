@@ -268,6 +268,17 @@ export default function App() {
         {/* Module 7: CALENDAR (Incident IQ Facilities & Event Setup Schedule) */}
         {currentView === 'calendar' && (
           <FacilitiesCalendar 
+            calendarViewId={catalog.incidentIqCalendarViewId || "534e7bd4-91df-f111-bf5b-6045bdb05b62"}
+            onUpdateCalendarViewId={async (newId) => {
+              const updated = { ...catalog, incidentIqCalendarViewId: newId };
+              setCatalog(updated);
+              try {
+                await saveCatalogSettings(updated);
+              } catch (err) {
+                console.error("Error saving calendar viewId:", err);
+              }
+            }}
+            isAdmin={isStaffOrAdmin}
             onNavigateToSubmit={() => {
               setSelectedArea(null);
               setCurrentView('submit');

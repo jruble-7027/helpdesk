@@ -30,23 +30,24 @@ export default function Navbar({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20 gap-4">
           
-          {/* 1. Left: Brand Logo & Title -> Takes user to the main submission screen */}
+          {/* 1. Left: Official Brand Logo & Title -> Takes user to the main submission screen */}
           <div 
             onClick={() => setCurrentView('submit')}
-            className="flex items-center gap-3.5 cursor-pointer group flex-shrink-0"
+            className="flex items-center gap-3 cursor-pointer group flex-shrink-0"
             title="Return to Main Ticket Submission Screen"
           >
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 flex items-center justify-center font-black text-slate-950 text-xl shadow-lg shadow-amber-500/20 group-hover:scale-105 transition-all border border-amber-300/40">
-              W
-            </div>
-            <div className="leading-tight">
-              <div className="font-black text-lg tracking-tight text-white flex items-center gap-1.5">
-                <span>WCA</span>
-                <span className="text-amber-400 font-extrabold">HELPDESK</span>
-              </div>
-              <p className="text-[11px] text-slate-400 font-medium hidden sm:block tracking-wide">
-                Wesleyan Christian Academy
-              </p>
+            <img 
+              src="/wca-logo-white.svg" 
+              alt="Wesleyan Christian Academy" 
+              className="h-9 sm:h-11 w-auto object-contain group-hover:scale-[1.02] transition-transform" 
+            />
+            <div className="hidden sm:flex flex-col border-l border-slate-700/80 pl-3 leading-tight">
+              <span className="text-xs font-black tracking-widest text-amber-400 uppercase">
+                Helpdesk
+              </span>
+              <span className="text-[10px] text-slate-400 font-medium tracking-wide">
+                Service Portal
+              </span>
             </div>
           </div>
 

@@ -8,13 +8,31 @@ const iconMap = {
   Laptop: Laptop,
 };
 
+const hoverCardStyles = {
+  facilities: {
+    border: 'hover:border-amber-400 hover:shadow-amber-500/10',
+    title: 'group-hover:text-amber-600',
+    count: 'text-amber-700',
+  },
+  housekeeping: {
+    border: 'hover:border-emerald-400 hover:shadow-emerald-500/10',
+    title: 'group-hover:text-emerald-600',
+    count: 'text-emerald-700',
+  },
+  itsm: {
+    border: 'hover:border-blue-400 hover:shadow-blue-500/10',
+    title: 'group-hover:text-blue-600',
+    count: 'text-blue-700',
+  },
+};
+
 export default function LandingAreaPicker({ onSelectArea, areasList }) {
   const displayAreas = areasList && areasList.length > 0 ? areasList : AREAS;
 
   return (
     <div className="max-w-5xl mx-auto py-8 sm:py-12 px-4 sm:px-6">
       <div className="text-center mb-10 sm:mb-14">
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300 mb-4">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300 mb-4 shadow-sm">
           WCA Support Center
         </span>
         <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-slate-900 tracking-tight">
@@ -28,11 +46,12 @@ export default function LandingAreaPicker({ onSelectArea, areasList }) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
         {displayAreas.map((area) => {
           const IconComponent = iconMap[area.icon] || Wrench;
+          const styles = hoverCardStyles[area.id] || hoverCardStyles.facilities;
           return (
             <div
               key={area.id}
               onClick={() => onSelectArea(area)}
-              className="relative group bg-white rounded-2xl border-2 border-slate-200 hover:border-amber-400 p-6 sm:p-7 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between cursor-pointer transform hover:-translate-y-1.5"
+              className={`relative group bg-white rounded-2xl border-2 border-slate-200 ${styles.border} p-6 sm:p-7 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between cursor-pointer transform hover:-translate-y-1.5`}
             >
               {/* Top Accent Pill */}
               <div>
@@ -45,7 +64,7 @@ export default function LandingAreaPicker({ onSelectArea, areasList }) {
                   </span>
                 </div>
 
-                <h3 className="text-xl font-bold text-slate-900 group-hover:text-amber-600 transition-colors">
+                <h3 className={`text-xl font-bold text-slate-900 ${styles.title} transition-colors`}>
                   {area.name}
                 </h3>
                 <p className="mt-2 text-sm text-slate-600 leading-relaxed">
@@ -64,7 +83,7 @@ export default function LandingAreaPicker({ onSelectArea, areasList }) {
                         <span className="truncate">{asset.name.split('(')[0]}</span>
                       </li>
                     ))}
-                    <li className="text-[11px] text-amber-700 font-medium pl-5">
+                    <li className={`text-[11px] font-medium pl-5 ${styles.count}`}>
                       + {area.assetTypes.length - 3} more categories
                     </li>
                   </ul>
