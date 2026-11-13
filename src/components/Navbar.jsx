@@ -28,11 +28,11 @@ export default function Navbar({
 
   return (
     <header className="bg-[#0b1c2d] text-white shadow-xl border-b border-slate-800/80 sticky top-0 z-50">
-      {/* Balanced, centered header that never overflows on 1280px-1920px screens */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-5 lg:px-6">
-        <div className="flex items-center justify-between h-18 sm:h-20 gap-2 xl:gap-4">
+      {/* Full-width responsive header container */}
+      <div className="w-full max-w-[1600px] mx-auto px-3 sm:px-5 lg:px-6">
+        <div className="flex items-center justify-between h-16 sm:h-20 gap-3">
           
-          {/* 1. Left: Official Brand Logo & Title -> Takes user to the main submission screen */}
+          {/* 1. Left: Official Brand Logo -> Takes user to the main submission screen */}
           <div 
             onClick={() => setCurrentView('submit')}
             className="flex items-center gap-2.5 cursor-pointer group flex-shrink-0"
@@ -41,9 +41,12 @@ export default function Navbar({
             <img 
               src="/wca-logo-white.svg" 
               alt="Wesleyan Christian Academy" 
-              className="h-8 xl:h-9 w-auto object-contain group-hover:scale-[1.02] transition-transform" 
+              width="145"
+              height="35"
+              style={{ width: '145px', height: '35px' }}
+              className="object-contain flex-shrink-0 group-hover:opacity-90 transition-opacity" 
             />
-            <div className="hidden xl:flex flex-col border-l border-slate-700/80 pl-2.5 leading-tight">
+            <div className="hidden 2xl:flex flex-col border-l border-slate-700/80 pl-2.5 leading-tight">
               <span className="text-[11px] font-black tracking-widest text-amber-400 uppercase">
                 Helpdesk
               </span>
@@ -53,8 +56,8 @@ export default function Navbar({
             </div>
           </div>
 
-          {/* 2. Center: Navigation Options (Centered, Compact, Single-Line) */}
-          <nav className="hidden lg:flex flex-1 items-center justify-center gap-1 xl:gap-1.5 min-w-0">
+          {/* 2. Center: Navigation Options (Never shrinks below content size, never overlaps neighbors) */}
+          <nav className="hidden lg:flex items-center justify-center gap-1 xl:gap-1.5 flex-shrink-0">
             
             {/* Submit Ticket */}
             <button
@@ -107,7 +110,8 @@ export default function Navbar({
               }`}
             >
               <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
-              <span>Facility Calendar</span>
+              <span className="hidden xl:inline">Facility Calendar</span>
+              <span className="xl:hidden">Calendar</span>
             </button>
 
             {/* Fleet & Device Inventory (IT & Admins Only) */}
@@ -151,16 +155,17 @@ export default function Navbar({
                 }`}
               >
                 <Sliders className="w-3.5 h-3.5 flex-shrink-0" />
-                <span>Customize Fields</span>
+                <span className="hidden xl:inline">Customize Fields</span>
+                <span className="xl:hidden">Customize</span>
               </button>
             )}
           </nav>
 
-          {/* 3. Right: User Profile & Authentication (Compact so Avatar & Sign Out never clip) */}
+          {/* 3. Right: User Profile & Authentication */}
           <div className="flex items-center gap-2 flex-shrink-0">
             {user ? (
               <div className="flex items-center gap-2 pl-2 border-l border-slate-700/80">
-                <div className="hidden sm:flex flex-col items-end text-right leading-tight max-w-[140px]" title={user.email}>
+                <div className="hidden xl:flex flex-col items-end text-right leading-tight max-w-[125px]" title={user.email}>
                   <span className="text-xs font-bold text-white truncate w-full">
                     {user.displayName || user.email?.split('@')[0]}
                   </span>
@@ -173,12 +178,12 @@ export default function Navbar({
                   <img 
                     src={user.photoURL} 
                     alt={user.displayName || 'User'} 
-                    title={`${user.displayName || ''} (${user.email || ''})`}
+                    title={`${user.displayName || ''} (${user.email || ''}) — ${roleConfig.label}`}
                     className="w-9 h-9 rounded-full ring-2 ring-amber-400/60 object-cover flex-shrink-0" 
                   />
                 ) : (
                   <div 
-                    title={`${user.displayName || ''} (${user.email || ''})`}
+                    title={`${user.displayName || ''} (${user.email || ''}) — ${roleConfig.label}`}
                     className="w-9 h-9 rounded-full bg-slate-700 ring-2 ring-amber-400/60 flex items-center justify-center text-xs font-bold text-amber-400 flex-shrink-0"
                   >
                     {user.email ? user.email[0].toUpperCase() : 'U'}
