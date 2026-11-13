@@ -28,57 +28,57 @@ export default function Navbar({
 
   return (
     <header className="bg-[#0b1c2d] text-white shadow-xl border-b border-slate-800/80 sticky top-0 z-50">
-      {/* Spacious, pleasant header (h-20 = 80px) with single-line buttons */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-20 gap-4">
+      {/* Balanced, centered header that never overflows on 1280px-1920px screens */}
+      <div className="max-w-7xl mx-auto px-3 sm:px-5 lg:px-6">
+        <div className="flex items-center justify-between h-18 sm:h-20 gap-2 xl:gap-4">
           
           {/* 1. Left: Official Brand Logo & Title -> Takes user to the main submission screen */}
           <div 
             onClick={() => setCurrentView('submit')}
-            className="flex items-center gap-3 cursor-pointer group flex-shrink-0"
+            className="flex items-center gap-2.5 cursor-pointer group flex-shrink-0"
             title="Return to Main Ticket Submission Screen"
           >
             <img 
               src="/wca-logo-white.svg" 
               alt="Wesleyan Christian Academy" 
-              className="h-9 sm:h-11 w-auto object-contain group-hover:scale-[1.02] transition-transform" 
+              className="h-8 xl:h-9 w-auto object-contain group-hover:scale-[1.02] transition-transform" 
             />
-            <div className="hidden sm:flex flex-col border-l border-slate-700/80 pl-3 leading-tight">
-              <span className="text-xs font-black tracking-widest text-amber-400 uppercase">
+            <div className="hidden xl:flex flex-col border-l border-slate-700/80 pl-2.5 leading-tight">
+              <span className="text-[11px] font-black tracking-widest text-amber-400 uppercase">
                 Helpdesk
               </span>
-              <span className="text-[10px] text-slate-400 font-medium tracking-wide">
+              <span className="text-[9px] text-slate-400 font-medium tracking-wide">
                 Service Portal
               </span>
             </div>
           </div>
 
-          {/* 2. Center: Navigation Options (Horizontal, Single-Line, NO Double-Line Buttons!) */}
-          <nav className="hidden lg:flex items-center gap-2">
+          {/* 2. Center: Navigation Options (Centered, Compact, Single-Line) */}
+          <nav className="hidden lg:flex flex-1 items-center justify-center gap-1 xl:gap-1.5 min-w-0">
             
             {/* Submit Ticket */}
             <button
               onClick={() => setCurrentView('submit')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold tracking-wide transition-all whitespace-nowrap ${
+              className={`flex items-center gap-1.5 px-2.5 xl:px-3 py-2 rounded-xl text-xs font-bold tracking-wide transition-all whitespace-nowrap ${
                 currentView === 'submit'
                   ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 ring-1 ring-amber-400 font-black'
                   : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
               }`}
             >
-              <Ticket className="w-4 h-4" />
+              <Ticket className="w-3.5 h-3.5 flex-shrink-0" />
               <span>Submit Ticket</span>
             </button>
 
             {/* My Tickets */}
             <button
               onClick={() => setCurrentView('my-tickets')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold tracking-wide transition-all whitespace-nowrap ${
+              className={`flex items-center gap-1.5 px-2.5 xl:px-3 py-2 rounded-xl text-xs font-bold tracking-wide transition-all whitespace-nowrap ${
                 currentView === 'my-tickets'
                   ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 ring-1 ring-amber-400 font-black'
                   : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
               }`}
             >
-              <UserIcon className="w-4 h-4" />
+              <UserIcon className="w-3.5 h-3.5 flex-shrink-0" />
               <span>My Tickets</span>
             </button>
 
@@ -86,13 +86,13 @@ export default function Navbar({
             {isStaffOrTech && (
               <button
                 onClick={() => setCurrentView('dashboard')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold tracking-wide transition-all whitespace-nowrap ${
+                className={`flex items-center gap-1.5 px-2.5 xl:px-3 py-2 rounded-xl text-xs font-bold tracking-wide transition-all whitespace-nowrap ${
                   currentView === 'dashboard'
                     ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 ring-1 ring-amber-400 font-black'
                     : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
                 }`}
               >
-                <LayoutDashboard className="w-4 h-4" />
+                <LayoutDashboard className="w-3.5 h-3.5 flex-shrink-0" />
                 <span>Ticket Queue</span>
               </button>
             )}
@@ -100,13 +100,13 @@ export default function Navbar({
             {/* Facility & Event Setup Calendar */}
             <button
               onClick={() => setCurrentView('calendar')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold tracking-wide transition-all whitespace-nowrap ${
+              className={`flex items-center gap-1.5 px-2.5 xl:px-3 py-2 rounded-xl text-xs font-bold tracking-wide transition-all whitespace-nowrap ${
                 currentView === 'calendar'
                   ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 ring-1 ring-amber-400 font-black'
                   : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
               }`}
             >
-              <Calendar className="w-4 h-4" />
+              <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
               <span>Facility Calendar</span>
             </button>
 
@@ -114,13 +114,13 @@ export default function Navbar({
             {isItOrAdmin && (
               <button
                 onClick={() => setCurrentView('assets')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold tracking-wide transition-all whitespace-nowrap ${
+                className={`flex items-center gap-1.5 px-2.5 xl:px-3 py-2 rounded-xl text-xs font-bold tracking-wide transition-all whitespace-nowrap ${
                   currentView === 'assets'
                     ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 ring-1 ring-amber-400 font-black'
                     : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
                 }`}
               >
-                <Laptop className="w-4 h-4" />
+                <Laptop className="w-3.5 h-3.5 flex-shrink-0" />
                 <span>Inventory</span>
               </button>
             )}
@@ -129,13 +129,13 @@ export default function Navbar({
             {isAdmin && (
               <button
                 onClick={() => setCurrentView('users')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold tracking-wide transition-all whitespace-nowrap ${
+                className={`flex items-center gap-1.5 px-2.5 xl:px-3 py-2 rounded-xl text-xs font-bold tracking-wide transition-all whitespace-nowrap ${
                   currentView === 'users'
                     ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 ring-1 ring-amber-400 font-black'
                     : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
                 }`}
               >
-                <Users className="w-4 h-4" />
+                <Users className="w-3.5 h-3.5 flex-shrink-0" />
                 <span>User Roles</span>
               </button>
             )}
@@ -144,42 +144,43 @@ export default function Navbar({
             {isAdmin && (
               <button
                 onClick={() => setCurrentView('customizer')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold tracking-wide transition-all whitespace-nowrap ${
+                className={`flex items-center gap-1.5 px-2.5 xl:px-3 py-2 rounded-xl text-xs font-bold tracking-wide transition-all whitespace-nowrap ${
                   currentView === 'customizer'
                     ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 ring-1 ring-amber-400 font-black'
                     : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
                 }`}
               >
-                <Sliders className="w-4 h-4" />
+                <Sliders className="w-3.5 h-3.5 flex-shrink-0" />
                 <span>Customize Fields</span>
               </button>
             )}
           </nav>
 
-          {/* 3. Right: User Profile & Authentication */}
-          <div className="flex items-center gap-3 flex-shrink-0">
+          {/* 3. Right: User Profile & Authentication (Compact so Avatar & Sign Out never clip) */}
+          <div className="flex items-center gap-2 flex-shrink-0">
             {user ? (
-              <div className="flex items-center gap-2 sm:gap-3 pl-2 border-l border-slate-700/80">
-                <div className="hidden md:flex flex-col text-right leading-tight">
-                  <div className="flex items-center justify-end gap-1.5">
-                    <span className="text-xs font-bold text-white leading-tight">
-                      {user.displayName || user.email?.split('@')[0]}
-                    </span>
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold border ${roleConfig.badge}`}>
-                      {roleConfig.label}
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-amber-400 font-mono">{user.email}</span>
+              <div className="flex items-center gap-2 pl-2 border-l border-slate-700/80">
+                <div className="hidden sm:flex flex-col items-end text-right leading-tight max-w-[140px]" title={user.email}>
+                  <span className="text-xs font-bold text-white truncate w-full">
+                    {user.displayName || user.email?.split('@')[0]}
+                  </span>
+                  <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold border mt-0.5 ${roleConfig.badge}`}>
+                    {roleConfig.label}
+                  </span>
                 </div>
 
                 {user.photoURL ? (
                   <img 
                     src={user.photoURL} 
                     alt={user.displayName || 'User'} 
-                    className="w-10 h-10 rounded-full ring-2 ring-amber-400/60 object-cover" 
+                    title={`${user.displayName || ''} (${user.email || ''})`}
+                    className="w-9 h-9 rounded-full ring-2 ring-amber-400/60 object-cover flex-shrink-0" 
                   />
                 ) : (
-                  <div className="w-10 h-10 rounded-full bg-slate-700 ring-2 ring-amber-400/60 flex items-center justify-center text-xs font-bold text-amber-400">
+                  <div 
+                    title={`${user.displayName || ''} (${user.email || ''})`}
+                    className="w-9 h-9 rounded-full bg-slate-700 ring-2 ring-amber-400/60 flex items-center justify-center text-xs font-bold text-amber-400 flex-shrink-0"
+                  >
                     {user.email ? user.email[0].toUpperCase() : 'U'}
                   </div>
                 )}
@@ -187,7 +188,7 @@ export default function Navbar({
                 <button
                   onClick={logoutUser}
                   title="Sign Out"
-                  className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-800/80 rounded-xl transition-colors"
+                  className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-800/80 rounded-xl transition-colors flex-shrink-0"
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
