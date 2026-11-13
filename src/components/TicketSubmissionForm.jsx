@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   ArrowLeft, 
   Send, 
@@ -11,7 +11,9 @@ import {
   Building2, 
   MapPin, 
   Tag, 
-  AlertTriangle 
+  AlertTriangle,
+  FileText,
+  RefreshCw
 } from 'lucide-react';
 import { URGENCY_LEVELS, BUILDINGS, DEFAULT_PLACES } from '../data/categoriesData';
 import { submitTicket } from '../services/firebase';
@@ -44,9 +46,15 @@ export default function TicketSubmissionForm({ area, buildingsList, placesList, 
   const [description, setDescription] = useState('');
   const [urgency, setUrgency] = useState('medium');
   
-  // Attachments
+  // Attachments & Live Camera
   const [files, setFiles] = useState([]);
   const [filePreviews, setFilePreviews] = useState([]);
+  const [showCameraModal, setShowCameraModal] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState('environment');
+  const [cameraError, setCameraError] = useState('');
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const nativeCameraInputRef = useRef(null);
   
   // Submission states
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -62,28 +70,112 @@ export default function TicketSubmissionForm({ area, buildingsList, placesList, 
     }
   };
 
-  const handleFileChange = (e) => {
-    const selected = Array.from(e.target.files || []);
-    if (selected.length + files.length > 5) {
-      setErrorMsg('You can upload a maximum of 5 images.');
+  const addSelectedFiles = (selectedList) => {
+    if (!selectedList || selectedList.length === 0) return;
+    if (selectedList.length + files.length > 5) {
+      setErrorMsg('You can attach a maximum of 5 photos or documents.');
       return;
     }
 
-    const newFiles = [...files, ...selected];
+    const newFiles = [...files, ...selectedList];
     setFiles(newFiles);
 
-    // Create previews
-    const newPreviews = selected.map((file) => ({
+    const newPreviews = selectedList.map((file) => ({
       name: file.name,
+      type: file.type || '',
+      isImage: (file.type || '').startsWith('image/'),
       url: URL.createObjectURL(file),
       size: (file.size / 1024).toFixed(0) + ' KB'
     }));
     setFilePreviews((prev) => [...prev, ...newPreviews]);
   };
 
+  const handleFileChange = (e) => {
+    const selected = Array.from(e.target.files || []);
+    addSelectedFiles(selected);
+    e.target.value = '';
+  };
+
   const removeFile = (index) => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
     setFilePreviews((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Stop active camera stream
+  const stopCameraStream = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => stopCameraStream();
+  }, []);
+
+  // Open live camera viewfinder (or fallback to native camera input)
+  const startCamera = async (preferredFacing = cameraFacing) => {
+    setCameraError('');
+    stopCameraStream();
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      // Fallback directly to native OS camera input
+      nativeCameraInputRef.current?.click();
+      return;
+    }
+
+    setShowCameraModal(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: preferredFacing }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.warn('Webcam error, falling back to any available camera:', err);
+      try {
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        streamRef.current = fallbackStream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = fallbackStream;
+        }
+      } catch (err2) {
+        setCameraError('Could not access camera stream. Click "Use Device Camera / File Picker" below.');
+      }
+    }
+  };
+
+  const handleCloseCamera = () => {
+    stopCameraStream();
+    setShowCameraModal(false);
+    setCameraError('');
+  };
+
+  const handleToggleCameraFacing = () => {
+    const next = cameraFacing === 'environment' ? 'user' : 'environment';
+    setCameraFacing(next);
+    startCamera(next);
+  };
+
+  const handleSnapPhoto = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const fileName = `ticket_photo_${Date.now()}.jpg`;
+      const capturedFile = new File([blob], fileName, { type: 'image/jpeg' });
+      addSelectedFiles([capturedFile]);
+      handleCloseCamera();
+    }, 'image/jpeg', 0.9);
   };
 
   const handleSubmit = async (e) => {
@@ -476,42 +568,86 @@ export default function TicketSubmissionForm({ area, buildingsList, placesList, 
 
           <hr className="border-slate-100" />
 
-          {/* Section 4: Attach Photos */}
+          {/* Section 4: Attach Photos / Documents & Camera Capture */}
           <div>
             <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
               <Camera className="w-4 h-4 text-amber-500" />
-              <span>4. Attach Photo / Screenshot (Optional)</span>
+              <span>4. Take Photo or Attach Document / Picture (Optional)</span>
             </h3>
             <p className="text-xs text-slate-500 mb-3">
-              Take a photo on your phone or upload up to 5 images to help technicians identify the problem.
+              Snap a live picture with your camera or upload up to 5 files (JPG, PNG, PDF, Word, Excel) to help technicians identify the issue.
             </p>
 
+            {/* Hidden Native Camera Input (for mobile phones/tablets or direct OS camera) */}
+            <input
+              ref={nativeCameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+
             <div className="flex flex-wrap items-center gap-3">
+              {/* 1. Take Photo with Camera Button */}
+              <button
+                type="button"
+                onClick={() => startCamera('environment')}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-950 cursor-pointer transition-all text-xs font-extrabold shadow-xs"
+              >
+                <Camera className="w-4 h-4 text-amber-600" />
+                <span>Take Photo (Camera)</span>
+              </button>
+
+              {/* 2. Upload Picture or Document Button */}
               <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed border-slate-300 hover:border-amber-500 bg-slate-50 hover:bg-amber-50 text-slate-700 hover:text-amber-900 cursor-pointer transition-colors text-xs font-semibold">
-                <Upload className="w-4 h-4" />
-                <span>Upload Photos</span>
+                <Upload className="w-4 h-4 text-slate-500" />
+                <span>Upload Picture or Document</span>
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
                   multiple
                   onChange={handleFileChange}
                   className="hidden"
                 />
               </label>
-
-              {filePreviews.map((file, idx) => (
-                <div key={idx} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-slate-200 shadow-sm">
-                  <img src={file.url} alt="Preview" className="w-full h-full object-cover" />
-                  <button
-                    type="button"
-                    onClick={() => removeFile(idx)}
-                    className="absolute inset-0 bg-red-600/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
             </div>
+
+            {/* Attached Previews */}
+            {filePreviews.length > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                {filePreviews.map((file, idx) => (
+                  <div
+                    key={idx}
+                    className="relative group flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-xl p-2 pr-8 shadow-xs"
+                  >
+                    {file.isImage ? (
+                      <img
+                        src={file.url}
+                        alt={file.name}
+                        className="w-12 h-12 rounded-lg object-cover border border-slate-200 flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-6 h-6" />
+                      </div>
+                    )}
+                    <div className="min-w-0 max-w-[140px]">
+                      <p className="text-xs font-bold text-slate-800 truncate">{file.name}</p>
+                      <p className="text-[10px] text-slate-400">{file.size}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeFile(idx)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      title="Remove attachment"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Submitter info notice */}
@@ -545,6 +681,87 @@ export default function TicketSubmissionForm({ area, buildingsList, placesList, 
           </div>
         </form>
       </div>
+
+      {/* Live Camera Capture Modal */}
+      {showCameraModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200">
+            <div className="bg-[#0b1c2d] px-5 py-3.5 flex items-center justify-between text-white">
+              <div className="flex items-center gap-2">
+                <Camera className="w-5 h-5 text-amber-400" />
+                <h3 className="font-extrabold text-sm tracking-wide">Take Ticket Photo</h3>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseCamera}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {cameraError ? (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-3 text-center">
+                  <p className="font-semibold">{cameraError}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleCloseCamera();
+                      nativeCameraInputRef.current?.click();
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>Open Device Camera / File Picker</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="relative bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={handleToggleCameraFacing}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Flip Camera</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCloseCamera}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                  >
+                    Cancel
+                  </button>
+                  {!cameraError && (
+                    <button
+                      type="button"
+                      onClick={handleSnapPhoto}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-md shadow-amber-500/20"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span>Snap Photo</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
