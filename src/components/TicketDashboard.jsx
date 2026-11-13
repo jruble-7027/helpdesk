@@ -35,16 +35,44 @@ import {
   Bell,
   Plus,
   RotateCcw,
-  Tag
+  Tag,
+  Lock,
+  Eye,
+  EyeOff,
+  Paperclip,
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  Link as LinkIcon,
+  Image as ImageIcon,
+  List,
+  ListOrdered,
+  AlignLeft,
+  Check,
+  ChevronDown,
+  Reply,
+  FileText,
+  X,
+  Settings,
+  Circle,
+  Edit3
 } from 'lucide-react';
-import { db, deleteTicket, subscribeToStaffMembers, assignTicket } from '../services/firebase';
+import { 
+  db, 
+  deleteTicket, 
+  subscribeToStaffMembers, 
+  assignTicket,
+  addTicketComment,
+  updateTicketStatus
+} from '../services/firebase';
 import { canModifyTicket, canCloseTicket, ROLES } from '../data/rolesData';
 
 const STATUS_CONFIG = {
   new: { label: 'New', badge: 'bg-blue-100 text-blue-800 border-blue-300', dot: 'bg-blue-500' },
   assigned: { label: 'Assigned', badge: 'bg-indigo-100 text-indigo-800 border-indigo-300', dot: 'bg-indigo-500' },
   in_progress: { label: 'In Progress', badge: 'bg-amber-100 text-amber-800 border-amber-300', dot: 'bg-amber-500' },
-  waiting: { label: 'Waiting on Parts/User', badge: 'bg-purple-100 text-purple-800 border-purple-300', dot: 'bg-purple-500' },
+  waiting: { label: 'Waiting on Requester', badge: 'bg-purple-100 text-purple-800 border-purple-300', dot: 'bg-purple-500' },
   resolved: { label: 'Resolved', badge: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-500' },
   closed: { label: 'Closed', badge: 'bg-slate-100 text-slate-700 border-slate-300', dot: 'bg-slate-500' }
 };
@@ -168,11 +196,12 @@ const getAssetCategoryIcon = (assetType = '', title = '', areaId = '') => {
   return Wrench;
 };
 
-export default function TicketDashboard({ user, userProfile, filterByMyTickets = false, onNewTicket }) {
+export default function TicketDashboard({ user, userProfile, catalog, filterByMyTickets = false, onNewTicket }) {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   
   const role = userProfile?.role || 'requester';
+  const isRequester = role === 'requester';
   
   // Set default initial area based on role
   const getDefaultArea = () => {
@@ -195,9 +224,15 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
   const [staffMembers, setStaffMembers] = useState([]);
   const [myTicketsSubTab, setMyTicketsSubTab] = useState(role !== 'requester' ? 'assigned' : 'submitted');
 
-  // Note adding state
-  const [newNote, setNewNote] = useState('');
+  // Incident IQ Comment Composer & Notification State
+  const [commentText, setCommentText] = useState('');
+  const [visibleToRequester, setVisibleToRequester] = useState(true); // Toggle 1: true = Option 2 (visible to requester), false = Option 1 (internal tech note)
+  const [changeToWaiting, setChangeToWaiting] = useState(false); // Toggle 2: Change to "Waiting on requester"
+  const [commentFiles, setCommentFiles] = useState([]);
+  const [isPostingComment, setIsPostingComment] = useState(false);
+  const [commentSuccessMsg, setCommentSuccessMsg] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
+  const fileInputRef = useRef(null);
 
   // Subscribe to Staff members for ticket assignment
   useEffect(() => {
@@ -221,6 +256,11 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
         }));
         if (isMounted) {
           setTickets(fetched);
+          setSelectedTicket((prev) => {
+            if (!prev) return null;
+            const updated = fetched.find((t) => t.id === prev.id);
+            return updated || prev;
+          });
           setLoading(false);
         }
       }, (err) => {
@@ -238,6 +278,20 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
     }
   }, []);
 
+  // Auto-open ticket from URL query param (e.g. ?ticket=T-5991 or doc id)
+  useEffect(() => {
+    if (tickets.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const ticketParam = params.get('ticket');
+    if (ticketParam) {
+      const match = tickets.find((t) => t.id === ticketParam || t.ticketNumber === ticketParam);
+      if (match) {
+        setSelectedTicket(match);
+      }
+    }
+  }, [tickets]);
+
+  // Status update with automated email notification
   const handleUpdateStatus = async (ticketId, newStatus) => {
     if (!canModify(selectedTicket?.areaId)) {
       alert("You do not have permission to modify tickets in this area.");
@@ -251,21 +305,16 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
 
     setIsUpdating(true);
     try {
-      const ticketRef = doc(db, 'tickets', ticketId);
-      const statusEntry = {
-        status: newStatus,
-        timestamp: new Date().toISOString(),
-        updatedBy: user?.displayName || user?.email || 'Staff Member',
-        note: `Status updated to ${STATUS_CONFIG[newStatus]?.label || newStatus}`
-      };
-
-      await updateDoc(ticketRef, {
-        status: newStatus,
-        statusHistory: arrayUnion(statusEntry),
-        updatedAt: serverTimestamp()
+      const statusEntry = await updateTicketStatus({
+        ticketId,
+        ticket: selectedTicket,
+        newStatus,
+        statusLabel: STATUS_CONFIG[newStatus]?.label || newStatus,
+        user,
+        note: `Status updated to ${STATUS_CONFIG[newStatus]?.label || newStatus}`,
+        catalog
       });
 
-      // Update active selection
       if (selectedTicket && selectedTicket.id === ticketId) {
         setSelectedTicket((prev) => ({
           ...prev,
@@ -273,6 +322,9 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
           statusHistory: [...(prev.statusHistory || []), statusEntry]
         }));
       }
+
+      setCommentSuccessMsg(`✓ Status changed to "${STATUS_CONFIG[newStatus]?.label || newStatus}" • Email notification sent`);
+      setTimeout(() => setCommentSuccessMsg(''), 4500);
     } catch (error) {
       console.error("Failed to update status:", error);
       alert("Error updating status. Please verify permissions.");
@@ -281,35 +333,129 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
     }
   };
 
-  const handleAddNote = async (e) => {
-    e.preventDefault();
-    if (!newNote.trim() || !selectedTicket) return;
+  // Incident IQ Formatting toolbar handler
+  const handleFormatText = (format) => {
+    const textarea = document.getElementById('incidentiq-comment-textarea');
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selected = commentText.substring(start, end);
+    let replacement = '';
 
-    setIsUpdating(true);
+    switch (format) {
+      case 'bold':
+        replacement = `**${selected || 'bold text'}**`;
+        break;
+      case 'italic':
+        replacement = `*${selected || 'italic text'}*`;
+        break;
+      case 'underline':
+        replacement = `__${selected || 'underlined text'}__`;
+        break;
+      case 'strikethrough':
+        replacement = `~~${selected || 'strikethrough text'}~~`;
+        break;
+      case 'link':
+        replacement = `[${selected || 'link title'}](https://...)`;
+        break;
+      case 'bullet':
+        replacement = `\n• ${selected || 'list item'}`;
+        break;
+      case 'numbered':
+        replacement = `\n1. ${selected || 'list item'}`;
+        break;
+      case 'clear':
+        replacement = selected.replace(/[*_~`#]/g, '');
+        break;
+      default:
+        replacement = selected;
+    }
+
+    const updatedText = commentText.substring(0, start) + replacement + commentText.substring(end);
+    setCommentText(updatedText);
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + replacement.length, start + replacement.length);
+    }, 10);
+  };
+
+  // Comment file selection
+  const handleCommentFileSelect = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      setCommentFiles((prev) => [...prev, ...files]);
+    }
+  };
+
+  const handleRemoveCommentFile = (index) => {
+    setCommentFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Add Comment (Technician / Staff - Option 1 vs Option 2)
+  const handleAddComment = async (e) => {
+    if (e) e.preventDefault();
+    if (!commentText.trim() && commentFiles.length === 0) return;
+    if (!selectedTicket) return;
+
+    setIsPostingComment(true);
     try {
-      const ticketRef = doc(db, 'tickets', selectedTicket.id);
-      const noteEntry = {
-        status: selectedTicket.status,
-        timestamp: new Date().toISOString(),
-        updatedBy: user?.displayName || user?.email || 'Staff Member',
-        note: newNote.trim()
-      };
-
-      await updateDoc(ticketRef, {
-        statusHistory: arrayUnion(noteEntry),
-        updatedAt: serverTimestamp()
+      const isInternal = !visibleToRequester;
+      const newComment = await addTicketComment({
+        ticketId: selectedTicket.id,
+        ticket: selectedTicket,
+        text: commentText,
+        isInternal: isInternal,
+        changeStatusToWaiting: changeToWaiting,
+        files: commentFiles,
+        user,
+        catalog
       });
 
-      setSelectedTicket((prev) => ({
-        ...prev,
-        statusHistory: [...(prev.statusHistory || []), noteEntry]
-      }));
-      setNewNote('');
-    } catch (error) {
-      console.error("Failed to add note:", error);
-      alert("Error adding note.");
+      const successMsg = isInternal 
+        ? '🔒 Internal technician note saved (hidden from requester)' 
+        : `✓ Public response posted • Email sent to ${selectedTicket.createdByEmail || selectedTicket.requester?.email || 'requester'}`;
+
+      setCommentSuccessMsg(successMsg);
+      setCommentText('');
+      setCommentFiles([]);
+      setChangeToWaiting(false);
+      setTimeout(() => setCommentSuccessMsg(''), 5000);
+    } catch (err) {
+      console.error('Failed to post comment:', err);
+      alert('Error posting response. Please check network/permissions.');
     } finally {
-      setIsUpdating(false);
+      setIsPostingComment(false);
+    }
+  };
+
+  // Requester Reply (Staff submitter replying to technician)
+  const handleRequesterReply = async (e) => {
+    if (e) e.preventDefault();
+    if (!commentText.trim() && commentFiles.length === 0) return;
+    if (!selectedTicket) return;
+
+    setIsPostingComment(true);
+    try {
+      await addTicketComment({
+        ticketId: selectedTicket.id,
+        ticket: selectedTicket,
+        text: commentText,
+        isInternal: false, // Requesters are always public
+        changeStatusToWaiting: false,
+        files: commentFiles,
+        user,
+        catalog
+      });
+
+      setCommentSuccessMsg('✓ Reply posted & technician notified!');
+      setCommentText('');
+      setCommentFiles([]);
+      setTimeout(() => setCommentSuccessMsg(''), 5000);
+    } catch (err) {
+      console.error('Failed to post reply:', err);
+      alert('Error posting reply.');
+    } finally {
+      setIsPostingComment(false);
     }
   };
 
@@ -318,7 +464,7 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
     setIsUpdating(true);
     try {
       const targetUser = staffMembers.find((s) => s.email?.toLowerCase() === assigneeEmail?.toLowerCase()) || null;
-      await assignTicket(selectedTicket.id, targetUser, user);
+      await assignTicket(selectedTicket.id, targetUser, user, selectedTicket, catalog);
 
       const historyEntry = {
         status: targetUser ? 'assigned' : 'new',
@@ -1332,43 +1478,418 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
               </div>
             )}
 
-            {/* Activity & Note Log */}
-            <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
-                <MessageSquare className="w-3.5 h-3.5 text-amber-500" />
-                <span>Work Notes & Activity</span>
-              </h4>
+            {/* Notification & Feedback Banner */}
+            {commentSuccessMsg && (
+              <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl text-xs font-semibold flex items-center justify-between animate-fadeIn shadow-sm">
+                <span>{commentSuccessMsg}</span>
+                <button onClick={() => setCommentSuccessMsg('')} className="text-emerald-700 hover:text-emerald-900 p-1">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
 
-              <div className="space-y-2 mb-3 max-h-48 overflow-y-auto">
-                {selectedTicket.statusHistory && selectedTicket.statusHistory.map((item, idx) => (
-                  <div key={idx} className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs">
-                    <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
-                      <span className="font-semibold text-slate-700">{item.updatedBy}</span>
-                      <span>{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            {/* Conversation Thread & Activity Timeline */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                  <MessageSquare className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Activity &amp; Ticket Conversation</span>
+                </h4>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {selectedTicket.comments?.length || 0} Comments
+                </span>
+              </div>
+
+              {/* Thread History Box */}
+              <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                {/* Initial Submission Card */}
+                <div className="p-2.5 rounded-xl border border-slate-200 bg-white text-xs space-y-1">
+                  <div className="flex items-center justify-between text-[11px] text-slate-400">
+                    <span className="font-semibold text-slate-700">
+                      {selectedTicket.createdByName || selectedTicket.requester?.name || 'Requester'} (Submitted)
+                    </span>
+                    <span>{formatRelativeTime(selectedTicket.createdAt)}</span>
+                  </div>
+                  <div className="text-slate-600 text-[11px]">
+                    Ticket created in <strong>{selectedTicket.areaName}</strong> at <strong>{selectedTicket.location || selectedTicket.building}</strong> ({selectedTicket.room || selectedTicket.roomLocation}).
+                  </div>
+                </div>
+
+                {/* Combined Comments & History */}
+                {selectedTicket.comments && selectedTicket.comments
+                  .filter((c) => !(isRequester && c.isInternal)) // Strict privacy: requesters never see internal notes
+                  .map((c, idx) => (
+                    <div
+                      key={c.id || idx}
+                      className={`p-3 rounded-xl border text-xs space-y-2 transition-all ${
+                        c.isInternal
+                          ? 'bg-amber-50/70 border-amber-300 border-l-4 border-l-amber-500 shadow-sm'
+                          : 'bg-white border-slate-200 border-l-4 border-l-blue-500 shadow-sm'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-[11px]">
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[9px] ${
+                            c.isInternal ? 'bg-amber-200 text-amber-900' : 'bg-blue-100 text-blue-900'
+                          }`}>
+                            {getInitials(c.authorName || c.authorEmail)}
+                          </div>
+                          <span className="font-bold text-slate-800">{c.authorName}</span>
+                          <span className="text-[10px] text-slate-400">({ROLES[c.authorRole]?.label || c.authorRole})</span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {c.isInternal ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-[9px] bg-amber-100 text-amber-800 border border-amber-300">
+                              <Lock className="w-2.5 h-2.5" />
+                              <span>Internal Tech Note</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <Eye className="w-2.5 h-2.5" />
+                              <span>Visible to Requester</span>
+                            </span>
+                          )}
+                          <span className="text-slate-400 text-[10px]">{formatRelativeTime(c.createdAt)}</span>
+                        </div>
+                      </div>
+
+                      <div className="text-slate-800 whitespace-pre-wrap leading-relaxed">
+                        {c.text}
+                      </div>
+
+                      {/* Comment Attachments */}
+                      {c.attachments && c.attachments.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
+                          {c.attachments.map((att, aIdx) => (
+                            <a
+                              key={aIdx}
+                              href={att.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded text-[11px] text-slate-700 font-medium transition-colors"
+                            >
+                              <Paperclip className="w-3 h-3 text-slate-500" />
+                              <span className="truncate max-w-[140px]">{att.name}</span>
+                              {att.size && <span className="text-[9px] text-slate-400">({att.size})</span>}
+                            </a>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="text-slate-700">{item.note}</div>
+                  ))}
+
+                {/* Status Milestones Log */}
+                {selectedTicket.statusHistory && selectedTicket.statusHistory.map((item, idx) => (
+                  <div key={`hist_${idx}`} className="p-2 rounded-lg bg-slate-50/80 border border-slate-100 text-[11px] text-slate-500 flex items-center justify-between">
+                    <span className="font-medium text-slate-700 truncate max-w-[240px]">
+                      🔄 {item.updatedBy}: {item.note || `Status updated to ${item.status}`}
+                    </span>
+                    <span className="text-[10px] text-slate-400">{formatRelativeTime(item.timestamp)}</span>
                   </div>
                 ))}
               </div>
 
-              {/* Add Note Input */}
-              <form onSubmit={handleAddNote} className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Add a technician note or follow-up comment..."
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
-                  className="flex-1 px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-amber-500"
-                />
-                <button
-                  type="submit"
-                  disabled={isUpdating || !newNote.trim()}
-                  className="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs transition-colors disabled:opacity-50 flex items-center gap-1"
-                >
-                  <Send className="w-3 h-3" />
-                  <span>Post</span>
-                </button>
-              </form>
+              {/* Bidirectional Composer */}
+              {/* Option A: Incident IQ Response & Technician Note Composer (Staff/Technicians/Admins) */}
+              {!isRequester ? (
+                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white mt-4">
+                  {/* Incident IQ Header & Formatting Toolbar */}
+                  <div className="bg-slate-50/80 border-b border-slate-200 px-3 py-2 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2 text-slate-500">
+                      <MessageSquare className="w-4 h-4 text-slate-400" />
+                      <div className="h-4 w-px bg-slate-200" />
+                    </div>
+
+                    <div className="flex items-center gap-1 text-slate-600">
+                      <button
+                        type="button"
+                        onClick={() => handleFormatText('bold')}
+                        title="Bold (Ctrl+B)"
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-700 font-bold transition-colors"
+                      >
+                        <Bold className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleFormatText('italic')}
+                        title="Italic (Ctrl+I)"
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-700 italic transition-colors"
+                      >
+                        <Italic className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleFormatText('underline')}
+                        title="Underline"
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-700 underline transition-colors"
+                      >
+                        <Underline className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleFormatText('strikethrough')}
+                        title="Strikethrough"
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-700 line-through transition-colors"
+                      >
+                        <Strikethrough className="w-3.5 h-3.5" />
+                      </button>
+                      <div className="h-4 w-px bg-slate-200 mx-1" />
+                      <button
+                        type="button"
+                        onClick={() => handleFormatText('link')}
+                        title="Insert Link"
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-700 transition-colors"
+                      >
+                        <LinkIcon className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        title="Attach Image / File"
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-700 transition-colors"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5" />
+                      </button>
+                      <div className="h-4 w-px bg-slate-200 mx-1" />
+                      <button
+                        type="button"
+                        onClick={() => handleFormatText('numbered')}
+                        title="Numbered List"
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-700 transition-colors"
+                      >
+                        <ListOrdered className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleFormatText('bullet')}
+                        title="Bulleted List"
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-700 transition-colors"
+                      >
+                        <List className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleFormatText('clear')}
+                        title="Clear Formatting"
+                        className="p-1.5 hover:bg-slate-200 rounded text-slate-500 font-mono text-[10px] transition-colors"
+                      >
+                        T<sub className="text-[8px]">x</sub>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Main Textarea */}
+                  <textarea
+                    id="incidentiq-comment-textarea"
+                    rows={4}
+                    placeholder={
+                      visibleToRequester
+                        ? "Type a response visible to the requester (an automated email notification will be sent)..."
+                        : "Type an internal technician note (Option 1: Notes for other technicians to see, hidden from requester)..."
+                    }
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    className="w-full p-3.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none resize-y min-h-[110px]"
+                  />
+
+                  {/* Attachment Chips Preview */}
+                  {commentFiles.length > 0 && (
+                    <div className="px-3.5 pb-2 flex flex-wrap gap-2">
+                      {commentFiles.map((file, idx) => (
+                        <div key={idx} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 font-medium">
+                          <Paperclip className="w-3 h-3 text-amber-700" />
+                          <span className="truncate max-w-[150px]">{file.name}</span>
+                          <span className="text-[10px] text-amber-600">({(file.size / 1024).toFixed(0)} KB)</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCommentFile(idx)}
+                            className="text-amber-700 hover:text-red-600 p-0.5"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Middle Controls Row: Browse & Incident IQ Toggle Switches */}
+                  <div className="px-3.5 py-2.5 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-50/40">
+                    {/* Browse Files Button */}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleCommentFileSelect}
+                        multiple
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 font-bold border border-slate-300 rounded-md text-[11px] flex items-center gap-1 shadow-2xs transition-colors"
+                      >
+                        <Paperclip className="w-3 h-3 text-slate-500" />
+                        <span>BROWSE</span>
+                      </button>
+                      <span className="text-[11px] text-slate-400 hidden sm:inline">
+                        or drag file(s) onto comment box above to attach
+                      </span>
+                    </div>
+
+                    {/* Incident IQ Dual Toggles */}
+                    <div className="flex flex-col gap-2 w-full sm:w-auto items-end">
+                      {/* Toggle 1: Visible to requester (Option 2 vs Option 1) */}
+                      <div
+                        className="flex items-center gap-2.5 cursor-pointer select-none"
+                        onClick={() => setVisibleToRequester(!visibleToRequester)}
+                      >
+                        <span className={`text-xs font-semibold ${visibleToRequester ? 'text-slate-800' : 'text-amber-800 font-bold'}`}>
+                          {visibleToRequester ? 'Visible to requestor' : 'Notes for technicians only (Internal)'}
+                        </span>
+                        <div
+                          className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out ${
+                            visibleToRequester ? 'bg-emerald-500' : 'bg-slate-300'
+                          }`}
+                        >
+                          <div
+                            className={`bg-white w-4.5 h-4.5 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
+                              visibleToRequester ? 'translate-x-4.5' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Toggle 2: Change to "Waiting on requester" */}
+                      <div
+                        className="flex items-center gap-2.5 cursor-pointer select-none"
+                        onClick={() => setChangeToWaiting(!changeToWaiting)}
+                      >
+                        <span className="text-xs font-semibold text-slate-700">
+                          Change to "Waiting on requestor"
+                        </span>
+                        <div
+                          className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out ${
+                            changeToWaiting ? 'bg-emerald-500' : 'bg-slate-300'
+                          }`}
+                        >
+                          <div
+                            className={`bg-white w-4.5 h-4.5 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
+                              changeToWaiting ? 'translate-x-4.5' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bottom Action Bar: Incident IQ Cancel & Add Comment Pill Button */}
+                  <div className="px-3.5 py-2.5 border-t border-slate-200 flex items-center justify-between bg-white">
+                    {/* Left subtle toolbar icons */}
+                    <div className="flex items-center gap-1.5 text-slate-400">
+                      <Settings className="w-3.5 h-3.5 hover:text-slate-600 cursor-pointer" />
+                      <Clock className="w-3.5 h-3.5 hover:text-slate-600 cursor-pointer" />
+                      <Circle className="w-3.5 h-3.5 hover:text-slate-600 cursor-pointer" />
+                      <Plus className="w-3.5 h-3.5 hover:text-slate-600 cursor-pointer" />
+                      <Edit3 className="w-3.5 h-3.5 hover:text-slate-600 cursor-pointer" />
+                      <MessageSquare className="w-3.5 h-3.5 text-blue-500" />
+                    </div>
+
+                    {/* Right action buttons */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCommentText('');
+                          setCommentFiles([]);
+                          setChangeToWaiting(false);
+                        }}
+                        disabled={isPostingComment}
+                        className="px-3 py-1.5 rounded-full border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs uppercase tracking-wider transition-colors disabled:opacity-50"
+                      >
+                        ✕ CANCEL
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleAddComment}
+                        disabled={isPostingComment || (!commentText.trim() && commentFiles.length === 0)}
+                        className="px-4 py-1.5 rounded-full bg-[#0088ff] hover:bg-blue-600 text-white font-bold text-xs uppercase tracking-wider shadow-sm transition-all disabled:opacity-50 flex items-center gap-1.5"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>{isPostingComment ? 'Posting...' : 'ADD COMMENT'}</span>
+                        <ChevronDown className="w-3 h-3 opacity-80" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Option B: Requester Reply Composer (Staff Submitter Experience) */
+                <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-3 mt-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Reply className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Reply to Technician</span>
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      Response visible to support staff
+                    </span>
+                  </div>
+
+                  <textarea
+                    rows={3}
+                    placeholder="Provide additional details, answer the technician's question, or reply here..."
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    className="w-full p-3 rounded-xl border border-slate-300 text-xs text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+                  />
+
+                  {/* Attachment Chips */}
+                  {commentFiles.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {commentFiles.map((file, idx) => (
+                        <div key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-900 rounded text-xs">
+                          <Paperclip className="w-3 h-3" />
+                          <span className="truncate max-w-[120px]">{file.name}</span>
+                          <button type="button" onClick={() => handleRemoveCommentFile(idx)} className="text-blue-700 hover:text-red-600">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleCommentFileSelect}
+                        multiple
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded text-xs font-semibold text-slate-700 flex items-center gap-1"
+                      >
+                        <Paperclip className="w-3 h-3 text-slate-500" />
+                        <span>Attach File</span>
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleRequesterReply}
+                      disabled={isPostingComment || (!commentText.trim() && commentFiles.length === 0)}
+                      className="px-4 py-1.5 bg-[#0b1c2d] hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-50"
+                    >
+                      <Send className="w-3 h-3 text-amber-400" />
+                      <span>{isPostingComment ? 'Sending...' : 'Send Reply'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ) : (

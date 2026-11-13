@@ -131,3 +131,126 @@ exports.inboundEmailTicket = onRequest(
     }
   }
 );
+
+// Outbound Email & Notification Webhook Handler
+exports.sendTicketNotification = onRequest(
+  { cors: true, timeoutSeconds: 60, memory: "256MiB" },
+  async (req, res) => {
+    // Enable CORS
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-inbound-secret");
+
+    if (req.method === "OPTIONS") {
+      return res.status(204).send("");
+    }
+
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method not allowed. Use POST." });
+    }
+
+    try {
+      const {
+        to,
+        recipientName,
+        subject,
+        html,
+        text,
+        ticketNumber,
+        ticketTitle,
+        ticketId,
+        type = "ticket_update",
+        authorName,
+        authorEmail,
+        isInternal = false
+      } = req.body;
+
+      if (!to || !subject) {
+        return res.status(400).json({ error: "Missing required fields ('to' or 'subject')." });
+      }
+
+      // Do NOT send external notifications for internal tech notes
+      if (isInternal) {
+        return res.status(200).json({ success: true, skipped: true, reason: "Internal note; external notification skipped." });
+      }
+
+      const timestamp = admin.firestore.FieldValue.serverTimestamp();
+
+      // 1. Write to standard Firebase 'mail' collection (compatible with Firebase Trigger Email extension)
+      const mailDoc = await db.collection("mail").add({
+        to: Array.isArray(to) ? to : [to],
+        message: {
+          subject: subject,
+          text: text || "",
+          html: html || text || ""
+        },
+        ticketId: ticketId || null,
+        ticketNumber: ticketNumber || null,
+        type: type,
+        createdAt: timestamp
+      });
+
+      // 2. Write to in-app 'notifications' collection
+      const notifDoc = await db.collection("notifications").add({
+        recipientEmail: (Array.isArray(to) ? to[0] : to).toLowerCase(),
+        recipientName: recipientName || (Array.isArray(to) ? to[0] : to),
+        subject: subject,
+        summary: text ? text.slice(0, 150) : subject,
+        ticketId: ticketId || null,
+        ticketNumber: ticketNumber || null,
+        ticketTitle: ticketTitle || "",
+        type: type,
+        authorName: authorName || "WCA Helpdesk",
+        authorEmail: authorEmail || "helpdesk@wcatrojans.org",
+        read: false,
+        createdAt: timestamp
+      });
+
+      // 3. Forward to Google Apps Script Outbound Dispatcher if configured in settings/catalog
+      let webhookDispatched = false;
+      try {
+        const catalogSnap = await db.collection("settings").doc("catalog").get();
+        const catalogData = catalogSnap.exists ? catalogSnap.data() : {};
+        const webhookUrl = catalogData.emailWebhookUrl;
+
+        if (webhookUrl && typeof webhookUrl === "string" && webhookUrl.startsWith("http")) {
+          const webhookResp = await fetch(webhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "send_email",
+              to: to,
+              recipientName: recipientName,
+              subject: subject,
+              htmlBody: html,
+              textBody: text,
+              ticketNumber: ticketNumber,
+              ticketTitle: ticketTitle,
+              type: type,
+              token: INBOUND_SECRET
+            })
+          });
+
+          if (webhookResp.ok) {
+            webhookDispatched = true;
+          } else {
+            console.warn("Outbound webhook responded with status:", webhookResp.status);
+          }
+        }
+      } catch (webhookErr) {
+        console.warn("Failed to dispatch to external webhook:", webhookErr.message);
+      }
+
+      return res.status(200).json({
+        success: true,
+        mailId: mailDoc.id,
+        notificationId: notifDoc.id,
+        webhookDispatched,
+        message: "Notification successfully processed and logged."
+      });
+    } catch (err) {
+      console.error("Error in sendTicketNotification:", err);
+      return res.status(500).json({ error: "Internal Server Error", details: err.message });
+    }
+  }
+);

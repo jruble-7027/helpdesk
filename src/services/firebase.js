@@ -268,7 +268,7 @@ export const subscribeToStaffMembers = (callback) => {
 };
 
 // Assign ticket to a technician
-export const assignTicket = async (ticketId, assigneeUser, assignedBy) => {
+export const assignTicket = async (ticketId, assigneeUser, assignedBy, ticket = null, catalog = null) => {
   const ticketRef = doc(db, 'tickets', ticketId);
   const assigneeName = assigneeUser ? (assigneeUser.displayName || assigneeUser.email) : null;
   const assigneeEmail = assigneeUser ? assigneeUser.email : null;
@@ -294,4 +294,159 @@ export const assignTicket = async (ticketId, assigneeUser, assignedBy) => {
   }
 
   await updateDoc(ticketRef, updatePayload);
+
+  // Trigger email notification to newly assigned technician
+  if (assigneeEmail && ticket) {
+    try {
+      const { sendTicketNotification } = await import('./notificationService');
+      await sendTicketNotification({
+        type: 'assigned',
+        ticket: { ...ticket, assignedToName: assigneeName, assignedToEmail: assigneeEmail },
+        actor: assignedBy,
+        webhookUrl: catalog?.emailWebhookUrl
+      });
+    } catch (notifErr) {
+      console.warn("Could not dispatch assignment notification:", notifErr);
+    }
+  }
+};
+
+// Add comment or internal technician note with optional file uploads & waiting status change
+export const addTicketComment = async ({
+  ticketId,
+  ticket,
+  text,
+  isInternal = false,
+  changeStatusToWaiting = false,
+  files = [],
+  user = null,
+  catalog = null
+}) => {
+  if (!ticketId || !text?.trim()) return null;
+
+  const uploadedFiles = [];
+  for (const file of files) {
+    try {
+      const fileId = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const fileRef = storageRef(storage, `ticket-comments/${fileId}`);
+      const uploadResult = await uploadBytes(fileRef, file);
+      const downloadUrl = await getDownloadURL(uploadResult.ref);
+      uploadedFiles.push({
+        name: file.name,
+        url: downloadUrl,
+        size: `${(file.size / 1024).toFixed(0)} KB`,
+        type: file.type
+      });
+    } catch (uploadErr) {
+      console.warn("Failed to upload comment file:", file.name, uploadErr);
+    }
+  }
+
+  const commentObj = {
+    id: `comm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    text: text.trim(),
+    authorName: user?.displayName || user?.name || user?.email?.split('@')[0] || 'Staff Member',
+    authorEmail: user?.email || '',
+    authorRole: user?.role || 'staff',
+    authorPhoto: user?.photoURL || null,
+    isInternal: Boolean(isInternal),
+    changeStatusToWaiting: Boolean(changeStatusToWaiting),
+    attachments: uploadedFiles,
+    createdAt: new Date().toISOString()
+  };
+
+  const isRequesterUser = user?.role === 'requester';
+  const newStatus = changeStatusToWaiting 
+    ? 'waiting' 
+    : (isRequesterUser && ticket?.status === 'waiting' ? 'in_progress' : (ticket?.status || 'new'));
+
+  const historyEntry = {
+    status: newStatus,
+    timestamp: new Date().toISOString(),
+    updatedBy: commentObj.authorName,
+    note: isInternal
+      ? `🔒 Internal technician note added`
+      : changeStatusToWaiting
+        ? `Response added & status set to Waiting on Requester`
+        : isRequesterUser
+          ? `Requester replied: "${text.trim().slice(0, 50)}${text.length > 50 ? '...' : ''}"`
+          : `Response sent to requester: "${text.trim().slice(0, 50)}${text.length > 50 ? '...' : ''}"`
+  };
+
+  const updatePayload = {
+    comments: arrayUnion(commentObj),
+    statusHistory: arrayUnion(historyEntry),
+    updatedAt: serverTimestamp()
+  };
+
+  if (newStatus !== ticket?.status) {
+    updatePayload.status = newStatus;
+  }
+
+  const ticketRef = doc(db, 'tickets', ticketId);
+  await updateDoc(ticketRef, updatePayload);
+
+  // Send email notification for public responses
+  if (!isInternal && ticket) {
+    try {
+      const { sendTicketNotification } = await import('./notificationService');
+      await sendTicketNotification({
+        type: isRequesterUser ? 'requester_reply' : 'comment',
+        ticket: { ...ticket, status: newStatus },
+        comment: commentObj,
+        newStatus: newStatus,
+        newStatusLabel: newStatus === 'waiting' ? 'Waiting on Requester' : undefined,
+        actor: user,
+        webhookUrl: catalog?.emailWebhookUrl
+      });
+    } catch (notifErr) {
+      console.warn("Could not dispatch comment notification:", notifErr);
+    }
+  }
+
+  return commentObj;
+};
+
+// Update ticket status and dispatch email notification
+export const updateTicketStatus = async ({
+  ticketId,
+  ticket,
+  newStatus,
+  statusLabel,
+  user,
+  note = '',
+  catalog = null
+}) => {
+  const ticketRef = doc(db, 'tickets', ticketId);
+  const statusEntry = {
+    status: newStatus,
+    timestamp: new Date().toISOString(),
+    updatedBy: user?.displayName || user?.email || 'Staff Member',
+    note: note || `Status updated to ${statusLabel || newStatus}`
+  };
+
+  await updateDoc(ticketRef, {
+    status: newStatus,
+    statusHistory: arrayUnion(statusEntry),
+    updatedAt: serverTimestamp()
+  });
+
+  // Dispatch email notification to requester
+  if (ticket && ticket.createdByEmail) {
+    try {
+      const { sendTicketNotification } = await import('./notificationService');
+      await sendTicketNotification({
+        type: 'status_change',
+        ticket: { ...ticket, status: newStatus },
+        newStatus: newStatus,
+        newStatusLabel: statusLabel,
+        actor: user,
+        webhookUrl: catalog?.emailWebhookUrl
+      });
+    } catch (notifErr) {
+      console.warn("Could not dispatch status change email:", notifErr);
+    }
+  }
+
+  return statusEntry;
 };

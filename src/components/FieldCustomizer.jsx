@@ -17,16 +17,30 @@ import {
   Tag,
   MapPin,
   User,
-  Layers
+  Layers,
+  Mail,
+  Send,
+  ExternalLink,
+  ShieldCheck,
+  CheckCircle2
 } from 'lucide-react';
 import { saveCatalogSettings } from '../services/firebase';
+import { sendTestNotificationEmail } from '../services/notificationService';
 import { AREAS as DEFAULT_AREAS, BUILDINGS as DEFAULT_BUILDINGS, DEFAULT_PLACES } from '../data/categoriesData';
 
 export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
-  const [activeTab, setActiveTab] = useState('buildings'); // 'buildings' | 'facilities' | 'housekeeping' | 'itsm'
+  const [activeTab, setActiveTab] = useState('buildings'); // 'buildings' | 'facilities' | 'housekeeping' | 'itsm' | 'notifications'
   const [places, setPlaces] = useState(catalog?.places || DEFAULT_PLACES);
   const [buildings, setBuildings] = useState(catalog?.buildings || DEFAULT_PLACES.map(p => p.name));
   const [areas, setAreas] = useState(catalog?.areas || DEFAULT_AREAS);
+
+  // Email & Notifications settings
+  const [emailWebhookUrl, setEmailWebhookUrl] = useState(catalog?.emailWebhookUrl || '');
+  const [testRecipient, setTestRecipient] = useState('jruble@wcatrojans.org');
+  const [isSavingEmailSettings, setIsSavingEmailSettings] = useState(false);
+  const [emailSaveSuccess, setEmailSaveSuccess] = useState(false);
+  const [isSendingTest, setIsSendingTest] = useState(false);
+  const [testResult, setTestResult] = useState(null);
 
   useEffect(() => {
     if (catalog?.places) {
@@ -36,6 +50,9 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
       setBuildings(catalog.buildings);
     }
     if (catalog?.areas) setAreas(catalog.areas);
+    if (catalog?.emailWebhookUrl !== undefined) {
+      setEmailWebhookUrl(catalog.emailWebhookUrl);
+    }
   }, [catalog]);
 
   // Place / Campus editing states
@@ -77,7 +94,8 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
       const payload = {
         places: placesToSave,
         buildings: buildingsToSave,
-        areas: updatedAreas || areas
+        areas: updatedAreas || areas,
+        emailWebhookUrl: emailWebhookUrl.trim()
       };
       await saveCatalogSettings(payload);
       if (onCatalogUpdate) onCatalogUpdate(payload);
@@ -87,6 +105,56 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
       alert('Error saving changes. Please check permissions.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveEmailSettings = async (e) => {
+    if (e) e.preventDefault();
+    setIsSavingEmailSettings(true);
+    setEmailSaveSuccess(false);
+    try {
+      const payload = {
+        places,
+        buildings: places.map(p => p.name),
+        areas,
+        emailWebhookUrl: emailWebhookUrl.trim()
+      };
+      await saveCatalogSettings(payload);
+      if (onCatalogUpdate) onCatalogUpdate(payload);
+      setEmailSaveSuccess(true);
+      showToast('Email & Notification settings saved!');
+      setTimeout(() => setEmailSaveSuccess(false), 4000);
+    } catch (err) {
+      console.error(err);
+      alert('Error saving email settings: ' + err.message);
+    } finally {
+      setIsSavingEmailSettings(false);
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    if (!testRecipient || !testRecipient.includes('@')) {
+      alert('Please enter a valid recipient email address.');
+      return;
+    }
+    setIsSendingTest(true);
+    setTestResult(null);
+    try {
+      const res = await sendTestNotificationEmail({
+        recipientEmail: testRecipient.trim(),
+        webhookUrl: emailWebhookUrl.trim() || null
+      });
+      setTestResult({
+        success: true,
+        message: `Test email notification dispatched to ${testRecipient.trim()}! Check inbox and spam.`
+      });
+    } catch (err) {
+      setTestResult({
+        success: false,
+        message: `Failed to send test email: ${err.message}`
+      });
+    } finally {
+      setIsSendingTest(false);
     }
   };
 
@@ -418,6 +486,18 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
         >
           <Laptop className="w-4 h-4" />
           <span>ITSM / Technology</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('notifications')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            activeTab === 'notifications'
+              ? 'bg-purple-700 text-white shadow-sm'
+              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <Mail className="w-4 h-4 text-purple-300" />
+          <span>Email & Notifications</span>
         </button>
       </div>
 
@@ -771,6 +851,163 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- TAB 5: EMAIL & NOTIFICATIONS SETTINGS --- */}
+      {activeTab === 'notifications' && (
+        <div className="space-y-6">
+          {/* Header Card */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <Mail className="w-5 h-5 text-purple-600" />
+                  <span>Email Notifications & Webhooks</span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Configure automatic email notifications on status changes, Incident IQ responses, and requester replies.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  Notification Engine Active
+                </span>
+              </div>
+            </div>
+
+            {/* Notification Triggers & Privacy Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600">
+                  <Send className="w-4 h-4 text-blue-600" />
+                  <span>Status Updates</span>
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  When a technician updates ticket status (In Progress, Waiting on Requester, Resolved, Closed), an email is automatically sent to the submitter with ticket details and deep-link.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/50 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-800">
+                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                  <span>Option 2: Visible to Requester</span>
+                </div>
+                <p className="text-xs text-emerald-700 leading-relaxed">
+                  When a technician posts a public response with the switch ON, the requester receives a branded email containing the technician's comment and an action button to reply.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/50 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-800">
+                  <ShieldCheck className="w-4 h-4 text-amber-600" />
+                  <span>Option 1: Tech Internal Notes</span>
+                </div>
+                <p className="text-xs text-amber-700 leading-relaxed">
+                  When the switch is OFF, the comment is strictly marked as internal. <strong>No emails are triggered</strong>, and the note is 100% invisible to requesters.
+                </p>
+              </div>
+            </div>
+
+            {/* Webhook Configuration Form */}
+            <form onSubmit={handleSaveEmailSettings} className="space-y-4 pt-2 border-t border-slate-100">
+              <div className="space-y-1.5">
+                <label className="block text-xs sm:text-sm font-bold text-slate-800">
+                  Outbound Google Apps Script Webhook URL (Optional)
+                </label>
+                <p className="text-xs text-slate-500">
+                  By default, notifications are processed via the Firebase Cloud Function (<code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-mono">sendTicketNotification</code>) and queued in Firestore (<code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-mono">mail</code> collection). If you have deployed the Google Apps Script Web App from <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-mono">google-apps-script/WCA_Helpdesk_Email_Dispatcher.gs</code>, paste its Web App URL below for direct Gmail delivery.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2 mt-2">
+                  <input
+                    type="url"
+                    value={emailWebhookUrl}
+                    onChange={(e) => setEmailWebhookUrl(e.target.value)}
+                    placeholder="https://script.google.com/macros/s/AKfycb.../exec"
+                    className="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm font-mono focus:ring-2 focus:ring-purple-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSavingEmailSettings}
+                    className="px-5 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-xl text-xs sm:text-sm shadow-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>{isSavingEmailSettings ? 'Saving...' : 'Save Webhook URL'}</span>
+                  </button>
+                </div>
+                {emailSaveSuccess && (
+                  <p className="text-xs font-semibold text-emerald-600 flex items-center gap-1 mt-1">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    Settings saved successfully!
+                  </p>
+                )}
+              </div>
+            </form>
+
+            {/* Test Email Delivery Widget */}
+            <div className="pt-4 border-t border-slate-100 space-y-3">
+              <h4 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Send className="w-4 h-4 text-purple-600" />
+                <span>Send Test Notification Email</span>
+              </h4>
+              <p className="text-xs text-slate-500">
+                Test the email dispatcher by sending a sample ticket notification to any WCA email address.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2 max-w-xl">
+                <input
+                  type="email"
+                  value={testRecipient}
+                  onChange={(e) => setTestRecipient(e.target.value)}
+                  placeholder="recipient@wcatrojans.org"
+                  className="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm focus:ring-2 focus:ring-purple-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleSendTestEmail}
+                  disabled={isSendingTest}
+                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs sm:text-sm shadow-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{isSendingTest ? 'Sending...' : 'Send Test Notification'}</span>
+                </button>
+              </div>
+              {testResult && (
+                <div
+                  className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 max-w-xl ${
+                    testResult.success
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-rose-50 border-rose-200 text-rose-800'
+                  }`}
+                >
+                  {testResult.success ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                  )}
+                  <span>{testResult.message}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Google Apps Script Integration Guide */}
+            <div className="pt-4 border-t border-slate-100 bg-slate-50/50 rounded-xl p-4 space-y-2 border border-slate-200 text-xs text-slate-600">
+              <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                <ExternalLink className="w-4 h-4 text-slate-600" />
+                <span>Google Apps Script Outbound & Inbound Dispatcher File</span>
+              </div>
+              <p>
+                A ready-to-deploy Google Apps Script is included in the codebase at:
+                <br />
+                <code className="text-slate-800 font-bold bg-white px-2 py-0.5 rounded border border-slate-200 mt-1 inline-block">
+                  google-apps-script/WCA_Helpdesk_Email_Dispatcher.gs
+                </code>
+              </p>
+              <p className="text-[11px] text-slate-500 leading-normal">
+                Deploy it in Google Apps Script under <strong className="text-slate-700">Deploy &gt; New deployment &gt; Web app</strong> (Execute as: Me / Who has access: Anyone) to enable zero-cost native Gmail sending for all notifications.
+              </p>
             </div>
           </div>
         </div>

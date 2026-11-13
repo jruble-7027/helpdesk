@@ -165,6 +165,7 @@ export default function App() {
           <TicketDashboard 
             user={user} 
             userProfile={userProfile}
+            catalog={catalog}
             filterByMyTickets={false} 
             onNewTicket={(areaId) => {
               if (areaId && areaId !== 'all') {
@@ -201,6 +202,7 @@ export default function App() {
           <TicketDashboard 
             user={user} 
             userProfile={userProfile}
+            catalog={catalog}
             filterByMyTickets={true} 
             onNewTicket={() => setCurrentView('submit')}
           />

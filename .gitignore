@@ -27,3 +27,8 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+
+# Google Drive shortcuts and virtual pointers
+*.gdoc
+*.gsheet
+*.gslides
