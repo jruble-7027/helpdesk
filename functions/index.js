@@ -70,28 +70,47 @@ exports.inboundEmailTicket = onRequest(
       }
 
       // 4. Construct Firestore ticket document
+      const ticketNum = `TICK-${Date.now().toString().slice(-6)}`;
+      const requesterName = senderName ? senderName.trim() : senderEmail.split("@")[0];
+      const requesterEmail = senderEmail.trim().toLowerCase();
+
       const newTicket = {
+        ticketNumber: ticketNum,
         title: subject.trim(),
         description: body ? body.trim() : "(No body text provided)",
-        department: department,
-        status: "open",
+        areaId: "itsm",
+        areaName: "Technology Support",
+        department: "itsm",
+        status: "new",
         urgency: "medium",
         building: "Submitted via Email",
-        roomLocation: "Email Inbound",
-        assetCategory: "Email Support Request",
-        assetTag: "",
-        predefinedIssue: "Inbound Email Request",
+        roomLocation: "Inbound Email",
+        assetType: "Email Support Request",
+        assetTag: "N/A",
+        selectedIssue: "Inbound Email Request",
+        createdByName: requesterName,
+        createdByEmail: requesterEmail,
+        createdByPhoto: null,
+        createdById: "email_inbound",
         requester: {
           uid: null,
-          email: senderEmail.trim().toLowerCase(),
-          name: senderName ? senderName.trim() : senderEmail.split("@")[0],
+          email: requesterEmail,
+          name: requesterName,
           source: "email"
         },
         attachments: uploadedAttachments,
+        statusHistory: [
+          {
+            status: "new",
+            timestamp: new Date().toISOString(),
+            updatedBy: `Email (${requesterEmail})`,
+            note: "Ticket auto-created from inbound email"
+          }
+        ],
         workNotes: [
           {
             author: "System (Email Gateway)",
-            text: `Ticket auto-created from inbound email sent by ${senderEmail}`,
+            text: `Ticket auto-created from inbound email sent by ${requesterEmail}`,
             timestamp: new Date().toISOString()
           }
         ],

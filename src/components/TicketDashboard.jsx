@@ -24,9 +24,10 @@ import {
   User,
   Building,
   ShieldAlert,
-  Send
+  Send,
+  Trash2
 } from 'lucide-react';
-import { db } from '../services/firebase';
+import { db, deleteTicket } from '../services/firebase';
 import { canModifyTicket, canCloseTicket } from '../data/rolesData';
 
 const STATUS_CONFIG = {
@@ -165,16 +166,31 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
     }
   };
 
+  const handleDeleteSelectedTicket = async () => {
+    if (!selectedTicket) return;
+    const confirm = window.confirm(`Permanently delete ticket "${selectedTicket.title}"?`);
+    if (!confirm) return;
+    try {
+      await deleteTicket(selectedTicket.id);
+      setSelectedTicket(null);
+    } catch (err) {
+      console.error('Failed to delete ticket:', err);
+      alert('Failed to delete ticket. Please check permissions.');
+    }
+  };
+
   // Permission checkers
   const canModify = (ticketAreaId) => canModifyTicket(role, ticketAreaId);
   const canClose = (ticketAreaId) => canCloseTicket(role, ticketAreaId);
 
   // Filter tickets
   const filteredTickets = tickets.filter((t) => {
-    if (filterByMyTickets && user?.email && t.createdByEmail !== user.email) {
+    const ticketEmail = t.createdByEmail || t.requester?.email;
+    if (filterByMyTickets && user?.email && ticketEmail !== user.email) {
       return false;
     }
-    if (selectedArea !== 'all' && t.areaId !== selectedArea) {
+    const ticketArea = t.areaId || t.department;
+    if (selectedArea !== 'all' && ticketArea !== selectedArea) {
       return false;
     }
     if (selectedStatus !== 'all' && t.status !== selectedStatus) {
@@ -344,10 +360,10 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                          {ticket.ticketNumber || 'TICK'}
+                          {ticket.ticketNumber || (ticket.id ? `TICK-${ticket.id.slice(-6)}` : 'TICK')}
                         </span>
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                          {ticket.areaName}
+                          {ticket.areaName || (ticket.department === 'itsm' ? 'ITSM / Technology' : ticket.department) || 'Support'}
                         </span>
                         {isEmergency && (
                           <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-300 flex items-center gap-1">
@@ -376,15 +392,15 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
                     <div className="flex items-center gap-3">
                       <span className="flex items-center gap-1">
                         <Building className="w-3.5 h-3.5 text-slate-400" />
-                        <span>{ticket.building} • {ticket.roomLocation}</span>
+                        <span>{ticket.building || 'Inbound'} • {ticket.roomLocation || 'Email'}</span>
                       </span>
                       <span className="hidden sm:inline">•</span>
-                      <span className="hidden sm:inline text-slate-600 font-medium">{ticket.assetType}</span>
+                      <span className="hidden sm:inline text-slate-600 font-medium">{ticket.assetType || ticket.assetCategory || 'Support Request'}</span>
                     </div>
 
                     <div className="flex items-center gap-1 text-slate-400">
                       <User className="w-3.5 h-3.5" />
-                      <span>{ticket.createdByName}</span>
+                      <span>{ticket.createdByName || ticket.requester?.name || ticket.createdByEmail || ticket.requester?.email || 'Staff Requester'}</span>
                     </div>
                   </div>
                 </div>
@@ -399,18 +415,30 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
             <div className="flex items-start justify-between">
               <div>
                 <span className="font-mono text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                  {selectedTicket.ticketNumber}
+                  {selectedTicket.ticketNumber || (selectedTicket.id ? `TICK-${selectedTicket.id.slice(-6)}` : 'TICK')}
                 </span>
                 <h3 className="text-xl font-extrabold text-slate-900 mt-1">
                   {selectedTicket.title}
                 </h3>
               </div>
-              <button
-                onClick={() => setSelectedTicket(null)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-semibold p-1"
-              >
-                ✕ Close
-              </button>
+              <div className="flex items-center gap-2">
+                {role === 'admin' && (
+                  <button
+                    onClick={handleDeleteSelectedTicket}
+                    title="Permanently Delete Ticket (Admin Only)"
+                    className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setSelectedTicket(null)}
+                  className="text-slate-400 hover:text-slate-600 text-sm font-semibold p-1"
+                >
+                  ✕ Close
+                </button>
+              </div>
             </div>
 
             {/* Quick Status Update Selector (Permitted Users Only) */}
@@ -481,7 +509,10 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
               )}
               <div className="flex justify-between py-1 border-b border-slate-100">
                 <span className="text-slate-500">Requester:</span>
-                <span className="font-semibold">{selectedTicket.createdByName} ({selectedTicket.createdByEmail})</span>
+                <span className="font-semibold">
+                  {selectedTicket.createdByName || selectedTicket.requester?.name || selectedTicket.createdByEmail || selectedTicket.requester?.email || 'Staff Requester'} 
+                  {' '}({selectedTicket.createdByEmail || selectedTicket.requester?.email || 'N/A'})
+                </span>
               </div>
             </div>
 

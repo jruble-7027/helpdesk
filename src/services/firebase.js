@@ -13,6 +13,7 @@ import {
   addDoc, 
   updateDoc, 
   setDoc,
+  deleteDoc,
   getDoc,
   getDocs,
   query, 
@@ -203,4 +204,9 @@ export const submitTicket = async (ticketData, files = []) => {
     console.error("Error creating ticket:", error);
     throw error;
   }
+};
+
+export const deleteTicket = async (ticketId) => {
+  const ticketRef = doc(db, 'tickets', ticketId);
+  await deleteDoc(ticketRef);
 };
