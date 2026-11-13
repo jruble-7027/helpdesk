@@ -206,12 +206,15 @@ exports.sendTicketNotification = onRequest(
         createdAt: timestamp
       });
 
-      // 3. Forward to Google Apps Script Outbound Dispatcher if configured in settings/catalog
+      // 3. Forward to Google Apps Script Outbound Dispatcher if configured in settings/catalog or request body
       let webhookDispatched = false;
+      let webhookStatus = null;
+      let webhookError = null;
+
       try {
         const catalogSnap = await db.collection("settings").doc("catalog").get();
         const catalogData = catalogSnap.exists ? catalogSnap.data() : {};
-        const webhookUrl = catalogData.emailWebhookUrl;
+        const webhookUrl = req.body.webhookUrl || catalogData.emailWebhookUrl;
 
         if (webhookUrl && typeof webhookUrl === "string" && webhookUrl.startsWith("http")) {
           const webhookResp = await fetch(webhookUrl, {
@@ -231,14 +234,21 @@ exports.sendTicketNotification = onRequest(
             })
           });
 
+          webhookStatus = webhookResp.status;
           if (webhookResp.ok) {
             webhookDispatched = true;
           } else {
             console.warn("Outbound webhook responded with status:", webhookResp.status);
+            if (webhookResp.status === 403) {
+              webhookError = "Google Apps Script rejected with HTTP 403 Forbidden. In Apps Script, click Deploy > Manage deployments > Edit > set 'Who has access' to 'Anyone' and choose 'New version'.";
+            } else {
+              webhookError = `Google Apps Script returned HTTP ${webhookResp.status}.`;
+            }
           }
         }
       } catch (webhookErr) {
         console.warn("Failed to dispatch to external webhook:", webhookErr.message);
+        webhookError = webhookErr.message;
       }
 
       return res.status(200).json({
@@ -246,7 +256,11 @@ exports.sendTicketNotification = onRequest(
         mailId: mailDoc.id,
         notificationId: notifDoc.id,
         webhookDispatched,
-        message: "Notification successfully processed and logged."
+        webhookStatus,
+        webhookError,
+        message: webhookDispatched 
+          ? "Notification successfully delivered to email dispatcher." 
+          : (webhookError || "Notification logged (no active email webhook dispatched).")
       });
     } catch (err) {
       console.error("Error in sendTicketNotification:", err);

@@ -144,10 +144,23 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
         recipientEmail: testRecipient.trim(),
         webhookUrl: emailWebhookUrl.trim() || null
       });
-      setTestResult({
-        success: true,
-        message: `Test email notification dispatched to ${testRecipient.trim()}! Check inbox and spam.`
-      });
+
+      if (res?.webhookDispatched) {
+        setTestResult({
+          success: true,
+          message: `✓ Test email notification successfully dispatched via Google Apps Script to ${testRecipient.trim()}! Please check your inbox and spam folder.`
+        });
+      } else if (res?.webhookError) {
+        setTestResult({
+          success: false,
+          message: `⚠️ Outbound Dispatch Error: ${res.webhookError}`
+        });
+      } else {
+        setTestResult({
+          success: true,
+          message: `Notification queued in Firestore mail collection for ${testRecipient.trim()}. If you have a Webhook URL, ensure it is saved.`
+        });
+      }
     } catch (err) {
       setTestResult({
         success: false,

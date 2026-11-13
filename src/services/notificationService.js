@@ -295,10 +295,9 @@ export async function sendTicketNotification({
     console.warn('[NotificationService] Mail collection write warning:', err);
   }
 
-  // 3. Dispatch to Cloud Function / Google Apps Script webhook
-  const targetWebhook = webhookUrl || CLOUD_FUNCTION_ENDPOINT;
+  // 3. Dispatch to Cloud Function (server-side relay avoids browser CORS blocks to Google Apps Script)
   try {
-    const response = await fetch(targetWebhook, {
+    const response = await fetch(CLOUD_FUNCTION_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -315,21 +314,35 @@ export async function sendTicketNotification({
         type,
         authorName: actorName,
         authorEmail: actor?.email,
-        isInternal: false
+        isInternal: false,
+        webhookUrl: webhookUrl || null
       })
     });
 
     if (response.ok) {
-      console.log(`[NotificationService] Notification sent successfully to ${recipientEmail}`);
-      return { success: true, deliveredTo: recipientEmail };
+      const data = await response.json().catch(() => ({}));
+      console.log(`[NotificationService] Notification processed:`, data);
+      return { 
+        success: true, 
+        deliveredTo: recipientEmail,
+        webhookDispatched: data.webhookDispatched,
+        webhookError: data.webhookError,
+        message: data.message
+      };
     } else {
       console.warn('[NotificationService] Dispatch response status:', response.status);
+      return {
+        success: false,
+        error: `Cloud Function returned HTTP ${response.status}`
+      };
     }
   } catch (netErr) {
     console.warn('[NotificationService] Cloud Function dispatch fallback:', netErr.message);
+    return {
+      success: false,
+      error: netErr.message
+    };
   }
-
-  return { success: true, deliveredTo: recipientEmail, queued: true };
 }
 
 /**
