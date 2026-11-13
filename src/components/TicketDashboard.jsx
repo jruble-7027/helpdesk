@@ -297,16 +297,35 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
         setKpiFilter('all');
         setSelectedStatus('all');
 
-        // Smooth scroll to ticket detail panel on mobile / desktop viewports
+        // Reset scroll position of drawer when opening
         setTimeout(() => {
           const detailEl = document.getElementById('ticket-detail-panel');
           if (detailEl) {
-            detailEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            detailEl.scrollTop = 0;
           }
-        }, 300);
+        }, 100);
       }
     }
   }, [tickets]);
+
+  // Escape key & body scroll lock for Incident IQ slide-out drawer
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && selectedTicket) {
+        setSelectedTicket(null);
+      }
+    };
+    if (selectedTicket) {
+      document.body.style.overflow = 'hidden';
+      window.addEventListener('keydown', handleKeyDown);
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedTicket]);
 
   // Status update with automated email notification
   const handleUpdateStatus = async (ticketId, newStatus) => {
@@ -1172,10 +1191,10 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
         </div>
       </div>
 
-      {/* Main Content Layout: Priority Queue (Left) & Notifications/Drawer (Right) */}
+      {/* Main Content Layout: Priority Queue (Left) & Notifications (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Ticket List (Left Column) */}
-        <div className={selectedTicket ? 'lg:col-span-7 space-y-3' : 'lg:col-span-8 space-y-3'}>
+        {/* Ticket List (Left Column) - Stays full width and never squished */}
+        <div className="lg:col-span-8 space-y-3">
           {filterByMyTickets && !user ? (
             <div className="bg-white rounded-2xl p-10 text-center border border-slate-200 shadow-sm space-y-4">
               <div className="w-14 h-14 bg-amber-100 text-amber-700 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
@@ -1334,37 +1353,117 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
           )}
         </div>
 
-        {/* Right Column: Ticket Detail Drawer OR Live Activity & Notifications Feed */}
-        {selectedTicket ? (
-          <div id="ticket-detail-panel" className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-lg p-6 space-y-6 sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
-            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
-              <div>
-                <span className="font-mono text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                  {selectedTicket.ticketNumber || (selectedTicket.id ? `TICK-${selectedTicket.id.slice(-6)}` : 'TICK')}
-                </span>
-                <h3 className="text-xl font-extrabold text-slate-900 mt-1">
-                  {selectedTicket.title}
-                </h3>
+        {/* Right Column: Incident IQ "Your Notifications / Recent Activity" Feed (Always Visible in Grid) */}
+        <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4 sticky top-20">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                <Bell className="w-4 h-4" />
               </div>
-              <div className="flex items-center gap-2">
-                {role === 'admin' && (
-                  <button
-                    onClick={handleDeleteSelectedTicket}
-                    title="Permanently Delete Ticket (Admin Only)"
-                    className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete</span>
-                  </button>
-                )}
-                <button
-                  onClick={() => setSelectedTicket(null)}
-                  className="text-slate-400 hover:text-slate-700 text-xs font-bold bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition-colors"
-                >
-                  ✕ Close
-                </button>
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900">Your Notifications</h3>
+                <p className="text-[11px] text-slate-500">Live ticket updates & technician activity</p>
               </div>
             </div>
+            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+              Live
+            </span>
+          </div>
+
+          {recentActivities.length === 0 ? (
+            <div className="py-12 text-center text-xs text-slate-400">
+              <Clock className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+              <p>No recent activity in this department.</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5 max-h-[calc(100vh-14rem)] overflow-y-auto pr-1">
+              {recentActivities.map((act, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => setSelectedTicket(act.ticket)}
+                  className="p-3 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-amber-50/40 hover:border-amber-200 transition-all cursor-pointer text-xs space-y-1 group"
+                >
+                  <div className="flex items-center justify-between text-[11px] text-slate-400">
+                    <span className="font-semibold text-slate-800 group-hover:text-amber-700 transition-colors">
+                      {act.updatedBy}
+                    </span>
+                    <span>{formatRelativeTime(act.timestamp)}</span>
+                  </div>
+                  <div className="text-slate-700 font-medium line-clamp-2">
+                    {act.note || `Status changed to ${STATUS_CONFIG[act.status]?.label || act.status}`}
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-mono pt-1">
+                    <span className="font-bold text-amber-600">
+                      {act.ticket.ticketNumber || (act.ticket.id ? `#${act.ticket.id.slice(-6)}` : '#TICK')}
+                    </span>
+                    <span>•</span>
+                    <span className="truncate max-w-[180px]">{act.ticket.title}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Incident IQ Style Slide-Out Ticket Detail Drawer (Rolls out from the side, full comfortable view) */}
+      {selectedTicket && (
+        <div className="fixed inset-0 z-50 overflow-hidden animate-fade-in" aria-labelledby="slide-over-title" role="dialog" aria-modal="true">
+          {/* Backdrop Blur Overlay */}
+          <div 
+            onClick={() => setSelectedTicket(null)}
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm transition-opacity" 
+          />
+
+          <div className="fixed inset-y-0 right-0 max-w-full flex pl-6 sm:pl-10 pointer-events-none">
+            <div 
+              id="ticket-detail-panel"
+              className="pointer-events-auto w-screen max-w-2xl lg:max-w-3xl xl:max-w-4xl bg-white shadow-2xl flex flex-col border-l border-slate-200 animate-slide-in-right h-full overflow-hidden"
+            >
+              {/* Sticky Top Bar with Close Button, Ticket Number, Category & Admin Delete */}
+              <div className="bg-[#0b1c2d] text-white px-6 py-4 flex items-center justify-between shadow-md shrink-0 border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-xs font-bold text-amber-400 bg-slate-800/90 border border-slate-700 px-2.5 py-1 rounded">
+                    {selectedTicket.ticketNumber || (selectedTicket.id ? `TICK-${selectedTicket.id.slice(-6)}` : 'TICK')}
+                  </span>
+                  <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider hidden sm:inline">
+                    {selectedTicket.area || selectedTicket.category || 'Ticket Detail'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {role === 'admin' && (
+                    <button
+                      onClick={handleDeleteSelectedTicket}
+                      title="Permanently Delete Ticket (Admin Only)"
+                      className="px-2.5 py-1.5 bg-red-950/80 hover:bg-red-900 text-red-200 border border-red-800 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Delete</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setSelectedTicket(null)}
+                    title="Close Ticket View (Esc)"
+                    className="px-2.5 py-1.5 text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors flex items-center gap-1.5 font-bold text-xs"
+                  >
+                    <span className="hidden sm:inline text-slate-400 font-mono text-[11px]">ESC</span>
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Scrollable Drawer Body Content */}
+              <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
+                <div>
+                  <h3 className="text-2xl font-extrabold text-slate-900 leading-tight">
+                    {selectedTicket.title}
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-2">
+                    <span>Submitted by <strong className="text-slate-700">{selectedTicket.createdByName || selectedTicket.requester?.name || selectedTicket.createdByEmail}</strong></span>
+                    <span>•</span>
+                    <span>{formatRelativeTime(selectedTicket.createdAt)}</span>
+                  </div>
+                </div>
 
             {/* Assign Technician Selector (Permitted Users Only) */}
             {canModify(selectedTicket.areaId) ? (
@@ -1961,60 +2060,10 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
               )}
             </div>
           </div>
-        ) : (
-          /* When no ticket is actively opened: Incident IQ "Your Notifications / Recent Activity" Feed */
-          <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4 sticky top-20">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
-                  <Bell className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-extrabold text-slate-900">Your Notifications</h3>
-                  <p className="text-[11px] text-slate-500">Live ticket updates & technician activity</p>
-                </div>
-              </div>
-              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                Live
-              </span>
-            </div>
-
-            {recentActivities.length === 0 ? (
-              <div className="py-12 text-center text-xs text-slate-400">
-                <Clock className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                <p>No recent activity in this department.</p>
-              </div>
-            ) : (
-              <div className="space-y-2.5 max-h-[calc(100vh-14rem)] overflow-y-auto pr-1">
-                {recentActivities.map((act, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => setSelectedTicket(act.ticket)}
-                    className="p-3 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-amber-50/40 hover:border-amber-200 transition-all cursor-pointer text-xs space-y-1 group"
-                  >
-                    <div className="flex items-center justify-between text-[11px] text-slate-400">
-                      <span className="font-semibold text-slate-800 group-hover:text-amber-700 transition-colors">
-                        {act.updatedBy}
-                      </span>
-                      <span>{formatRelativeTime(act.timestamp)}</span>
-                    </div>
-                    <div className="text-slate-700 font-medium line-clamp-2">
-                      {act.note || `Status changed to ${STATUS_CONFIG[act.status]?.label || act.status}`}
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-mono pt-1">
-                      <span className="font-bold text-amber-600">
-                        {act.ticket.ticketNumber || (act.ticket.id ? `#${act.ticket.id.slice(-6)}` : '#TICK')}
-                      </span>
-                      <span>•</span>
-                      <span className="truncate max-w-[180px]">{act.ticket.title}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        </div>
       </div>
     </div>
+  )}
+</div>
   );
 }

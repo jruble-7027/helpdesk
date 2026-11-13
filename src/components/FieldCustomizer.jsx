@@ -22,11 +22,149 @@ import {
   Send,
   ExternalLink,
   ShieldCheck,
-  CheckCircle2
+  CheckCircle2,
+  Upload,
+  Download,
+  FileText,
+  FileSpreadsheet,
+  FileUp,
+  Info
 } from 'lucide-react';
 import { saveCatalogSettings } from '../services/firebase';
 import { sendTestNotificationEmail } from '../services/notificationService';
 import { AREAS as DEFAULT_AREAS, BUILDINGS as DEFAULT_BUILDINGS, DEFAULT_PLACES } from '../data/categoriesData';
+
+// --- CSV Parsing & Export Helpers ---
+function parseCsvContent(text) {
+  if (!text || typeof text !== 'string') return [];
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  const rows = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    let delimiter = ',';
+    if (line.includes('\t')) delimiter = '\t';
+    else if (!line.includes(',') && line.includes(';')) delimiter = ';';
+
+    const tokens = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"' || char === "'") {
+        inQuotes = !inQuotes;
+      } else if (char === delimiter && !inQuotes) {
+        tokens.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    tokens.push(current.trim());
+    const cleaned = tokens.map((t) => t.replace(/^["']|["']$/g, '').trim()).filter(Boolean);
+    if (cleaned.length > 0) rows.push(cleaned);
+  }
+  return rows;
+}
+
+function extractRoomsFromCsvRows(rows) {
+  if (!rows || rows.length === 0) return [];
+  const headerCandidates = rows[0].map((c) => c.toLowerCase());
+  const roomColIdx = headerCandidates.findIndex((h) => 
+    h.includes('room') || h.includes('facility') || h.includes('location') || h.includes('classroom') || h.includes('name')
+  );
+  let startIndex = 0;
+  let targetCol = 0;
+  if (roomColIdx !== -1) {
+    targetCol = roomColIdx;
+    startIndex = 1;
+  } else if (headerCandidates.some((h) => h.includes('campus') || h.includes('building') || h.includes('wing'))) {
+    startIndex = 1;
+  }
+  const extracted = [];
+  for (let i = startIndex; i < rows.length; i++) {
+    const val = rows[i][targetCol] || rows[i][0];
+    if (val && val.trim()) extracted.push(val.trim());
+  }
+  return Array.from(new Set(extracted));
+}
+
+function extractAssetsFromCsvRows(rows) {
+  if (!rows || rows.length === 0) return [];
+  const headerCandidates = rows[0].map((c) => c.toLowerCase());
+  const colIdx = headerCandidates.findIndex((h) => 
+    h.includes('asset') || h.includes('item') || h.includes('category') || h.includes('name') || h.includes('type')
+  );
+  let startIndex = 0;
+  let targetCol = 0;
+  if (colIdx !== -1) {
+    targetCol = colIdx;
+    startIndex = 1;
+  }
+  const extracted = [];
+  for (let i = startIndex; i < rows.length; i++) {
+    const val = rows[i][targetCol] || rows[i][0];
+    if (val && val.trim()) extracted.push(val.trim());
+  }
+  return Array.from(new Set(extracted));
+}
+
+function extractIssuesFromCsvRows(rows) {
+  if (!rows || rows.length === 0) return [];
+  const headerCandidates = rows[0].map((c) => c.toLowerCase());
+  const colIdx = headerCandidates.findIndex((h) => 
+    h.includes('issue') || h.includes('problem') || h.includes('description') || h.includes('title')
+  );
+  let startIndex = 0;
+  let targetCol = 0;
+  if (colIdx !== -1) {
+    targetCol = colIdx;
+    startIndex = 1;
+  }
+  const extracted = [];
+  for (let i = startIndex; i < rows.length; i++) {
+    const val = rows[i][targetCol] || rows[i][0];
+    if (val && val.trim()) extracted.push(val.trim());
+  }
+  return Array.from(new Set(extracted));
+}
+
+function triggerCsvDownload(filename, csvContent) {
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function downloadSampleRoomsTemplate() {
+  const sample = `Room Name,Wing / Area
+Room 101,Main Academic Wing
+Room 102,Main Academic Wing
+Room 103,Science Wing
+Science Lab 1,Science Wing
+Gymnasium,Athletics Complex
+Main Office,Administrative Building
+Cafeteria,Commons
+Media Center,Library
+Baseball Field,Athletics Complex
+Restrooms,Main Hallway`;
+  triggerCsvDownload('sample_campus_rooms_template.csv', sample);
+}
+
+function downloadSampleAssetsTemplate(areaName = 'Department') {
+  const sample = `Asset Category Name
+Smartboard / Interactive Display
+Student Chromebook
+Staff Desktop Workstation
+Network Printer / Copier
+Classroom Projector
+Document Camera`;
+  triggerCsvDownload(`sample_${areaName.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_assets_template.csv`, sample);
+}
 
 export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
   const [activeTab, setActiveTab] = useState('buildings'); // 'buildings' | 'facilities' | 'housekeeping' | 'itsm' | 'notifications'
@@ -80,6 +218,264 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
 
   const [saving, setSaving] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
+
+  // CSV Import / Export states
+  const [importModal, setImportModal] = useState(null); // { type: 'rooms' | 'assets' | 'issues', targetPlaceId, areaId }
+  const [importTargetPlaceId, setImportTargetPlaceId] = useState('centennial');
+  const [importMode, setImportMode] = useState('append'); // 'append' | 'replace'
+  const [importMethod, setImportMethod] = useState('file'); // 'file' | 'paste'
+  const [importFileName, setImportFileName] = useState('');
+  const [rawImportText, setRawImportText] = useState('');
+  const [importItems, setImportItems] = useState([]);
+  const [isProcessingImport, setIsProcessingImport] = useState(false);
+
+  // Open CSV Import Helpers
+  const openRoomsImportModal = (placeId = 'centennial') => {
+    setImportTargetPlaceId(placeId);
+    setImportModal({ type: 'rooms', targetPlaceId: placeId });
+    setImportMode('append');
+    setImportMethod('file');
+    setImportFileName('');
+    setRawImportText('');
+    setImportItems([]);
+  };
+
+  const openAssetsImportModal = (areaId) => {
+    setImportModal({ type: 'assets', areaId });
+    setImportMode('append');
+    setImportMethod('file');
+    setImportFileName('');
+    setRawImportText('');
+    setImportItems([]);
+  };
+
+  const openIssuesImportModal = (areaId) => {
+    setImportModal({ type: 'issues', areaId });
+    setImportMode('append');
+    setImportMethod('file');
+    setImportFileName('');
+    setRawImportText('');
+    setImportItems([]);
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result;
+      if (typeof text === 'string') {
+        setRawImportText(text);
+        processRawText(text, importModal?.type);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handlePasteTextChange = (e) => {
+    const text = e.target.value;
+    setRawImportText(text);
+    processRawText(text, importModal?.type);
+  };
+
+  const processRawText = (text, type) => {
+    const rows = parseCsvContent(text);
+    let items = [];
+    if (type === 'rooms') {
+      items = extractRoomsFromCsvRows(rows);
+    } else if (type === 'assets') {
+      items = extractAssetsFromCsvRows(rows);
+    } else if (type === 'issues') {
+      items = extractIssuesFromCsvRows(rows);
+    }
+    setImportItems(items);
+  };
+
+  const handleRemoveImportItem = (indexToRemove) => {
+    setImportItems((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  const handleDirectCsvLoadForNewPlace = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result;
+      if (typeof text === 'string') {
+        const rows = parseCsvContent(text);
+        const extracted = extractRoomsFromCsvRows(rows);
+        if (extracted.length > 0) {
+          setNewPlaceData((prev) => ({
+            ...prev,
+            roomsText: extracted.join(', ')
+          }));
+          showToast(`✓ Loaded ${extracted.length} rooms from CSV!`);
+        } else {
+          alert('Could not find any rooms in the uploaded CSV file.');
+        }
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleDirectCsvLoadForEditPlace = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result;
+      if (typeof text === 'string') {
+        const rows = parseCsvContent(text);
+        const extracted = extractRoomsFromCsvRows(rows);
+        if (extracted.length > 0) {
+          setEditingPlace((prev) => ({
+            ...prev,
+            roomsText: extracted.join(', ')
+          }));
+          showToast(`✓ Loaded ${extracted.length} rooms from CSV!`);
+        } else {
+          alert('Could not find any rooms in the uploaded CSV file.');
+        }
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const exportCampusRoomsCsv = (place) => {
+    const lines = ['Campus,Room Name'];
+    (place.rooms || []).forEach((room) => {
+      lines.push(`"${(place.name || '').replace(/"/g, '""')}","${room.replace(/"/g, '""')}"`);
+    });
+    triggerCsvDownload(`${(place.name || 'Campus').toLowerCase().replace(/[^a-z0-9]+/g, '_')}_rooms.csv`, lines.join('\n'));
+  };
+
+  const exportDepartmentAssetsCsv = (area) => {
+    const lines = ['Department,Asset Category'];
+    (area.assetTypes || []).forEach((asset) => {
+      lines.push(`"${(area.name || '').replace(/"/g, '""')}","${(asset.name || '').replace(/"/g, '""')}"`);
+    });
+    triggerCsvDownload(`${(area.id || 'department')}_asset_categories.csv`, lines.join('\n'));
+  };
+
+  const handleExecuteImport = () => {
+    if (!importItems || importItems.length === 0) {
+      alert('No valid items found to import.');
+      return;
+    }
+    setIsProcessingImport(true);
+
+    try {
+      if (importModal?.type === 'rooms') {
+        const targetPlace = places.find((p) => p.id === importTargetPlaceId) || places[0];
+        if (!targetPlace) {
+          alert('Please select a valid campus.');
+          setIsProcessingImport(false);
+          return;
+        }
+
+        let finalRooms = [];
+        if (importMode === 'replace') {
+          finalRooms = importItems;
+        } else {
+          const existing = targetPlace.rooms || [];
+          const combined = [...existing];
+          importItems.forEach((item) => {
+            if (!combined.includes(item)) combined.push(item);
+          });
+          finalRooms = combined;
+        }
+
+        const updated = places.map((p) =>
+          p.id === targetPlace.id
+            ? {
+                ...p,
+                rooms: finalRooms,
+                roomsCount: finalRooms.length
+              }
+            : p
+        );
+
+        setPlaces(updated);
+        setBuildings(updated.map((p) => p.name));
+        persistChanges(updated, areas);
+        showToast(`✓ Successfully imported ${importItems.length} rooms into ${targetPlace.name}!`);
+        setImportModal(null);
+      } else if (importModal?.type === 'assets') {
+        const currentArea = areas.find((a) => a.id === importModal.areaId) || activeArea;
+        if (!currentArea) {
+          setIsProcessingImport(false);
+          return;
+        }
+
+        const existingNames = new Set((currentArea.assetTypes || []).map((a) => a.name.toLowerCase()));
+        const newAssets = [...(currentArea.assetTypes || [])];
+        let addedCount = 0;
+
+        importItems.forEach((item) => {
+          if (!existingNames.has(item.toLowerCase())) {
+            newAssets.push({
+              id: `asset_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+              name: item
+            });
+            existingNames.add(item.toLowerCase());
+            addedCount++;
+          }
+        });
+
+        const updatedAreas = areas.map((a) =>
+          a.id === currentArea.id
+            ? {
+                ...a,
+                assetTypes: newAssets
+              }
+            : a
+        );
+
+        setAreas(updatedAreas);
+        persistChanges(places, updatedAreas);
+        showToast(`✓ Imported ${addedCount} asset categories into ${currentArea.name}!`);
+        setImportModal(null);
+      } else if (importModal?.type === 'issues') {
+        const currentArea = areas.find((a) => a.id === importModal.areaId) || activeArea;
+        if (!currentArea) {
+          setIsProcessingImport(false);
+          return;
+        }
+
+        const existingIssues = new Set((currentArea.predefinedIssues || []).map((i) => i.toLowerCase()));
+        const newIssues = [...(currentArea.predefinedIssues || [])];
+        let addedCount = 0;
+
+        importItems.forEach((item) => {
+          if (!existingIssues.has(item.toLowerCase())) {
+            newIssues.push(item);
+            existingIssues.add(item.toLowerCase());
+            addedCount++;
+          }
+        });
+
+        const updatedAreas = areas.map((a) =>
+          a.id === currentArea.id
+            ? {
+                ...a,
+                predefinedIssues: newIssues
+              }
+            : a
+        );
+
+        setAreas(updatedAreas);
+        persistChanges(places, updatedAreas);
+        showToast(`✓ Imported ${addedCount} pre-defined issues into ${currentArea.name}!`);
+        setImportModal(null);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error during import: ' + err.message);
+    } finally {
+      setIsProcessingImport(false);
+    }
+  };
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -525,13 +921,25 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
               </p>
             </div>
 
-            <button
-              onClick={() => setShowAddPlaceModal(true)}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs sm:text-sm transition-colors flex items-center gap-1.5 shadow-sm"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ Add Campus / Building</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => openRoomsImportModal(places[0]?.id || 'centennial')}
+                className="px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold rounded-xl text-xs sm:text-sm transition-colors flex items-center gap-1.5 shadow-sm"
+                title="Bulk Import Campus Rooms from CSV File"
+              >
+                <Upload className="w-4 h-4 text-amber-600" />
+                <span>Import Rooms CSV</span>
+              </button>
+
+              <button
+                onClick={() => setShowAddPlaceModal(true)}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs sm:text-sm transition-colors flex items-center gap-1.5 shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Add Campus / Building</span>
+              </button>
+            </div>
           </div>
 
           {/* Places & Buildings List */}
@@ -586,7 +994,25 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
                         {(place.rooms || []).length}
                       </span>
                     </span>
-                    <span className="text-[10px] text-slate-400 font-medium">Click × to remove</span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openRoomsImportModal(place.id)}
+                        className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors"
+                        title={`Import Rooms CSV into ${place.name}`}
+                      >
+                        <Upload className="w-3 h-3 text-amber-600" />
+                        <span>Import CSV</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => exportCampusRoomsCsv(place)}
+                        className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors"
+                        title={`Export ${place.name} Rooms as CSV`}
+                      >
+                        <Download className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Room Chips */}
@@ -666,24 +1092,44 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
                 </p>
               </div>
 
-              {/* Add Asset Form */}
-              <form onSubmit={handleAddAsset} className="flex gap-2 w-full sm:w-auto">
-                <input
-                  type="text"
-                  placeholder="e.g. Smartboards, Sinks, Bleachers..."
-                  value={newAssetText}
-                  onChange={(e) => setNewAssetText(e.target.value)}
-                  className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm focus:ring-2 focus:ring-amber-500 w-full sm:w-64"
-                />
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <button
-                  type="submit"
-                  disabled={!newAssetText.trim()}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs sm:text-sm transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                  type="button"
+                  onClick={() => openAssetsImportModal(activeArea.id)}
+                  className="px-3 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold rounded-xl text-xs sm:text-sm transition-colors flex items-center gap-1.5 shadow-sm"
+                  title={`Bulk Import Asset Categories for ${activeArea.name} from CSV`}
                 >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Asset</span>
+                  <Upload className="w-4 h-4 text-amber-600" />
+                  <span>Import CSV</span>
                 </button>
-              </form>
+                <button
+                  type="button"
+                  onClick={() => exportDepartmentAssetsCsv(activeArea)}
+                  className="p-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-600 font-bold rounded-xl transition-colors shadow-sm"
+                  title={`Export ${activeArea.name} Asset Categories as CSV`}
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+
+                {/* Add Asset Form */}
+                <form onSubmit={handleAddAsset} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. Smartboards, Sinks, Bleachers..."
+                    value={newAssetText}
+                    onChange={(e) => setNewAssetText(e.target.value)}
+                    className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm focus:ring-2 focus:ring-amber-500 w-full sm:w-60"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!newAssetText.trim()}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs sm:text-sm transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add</span>
+                  </button>
+                </form>
+              </div>
             </div>
 
             {/* Asset Categories Grid */}
@@ -768,24 +1214,36 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
                 </p>
               </div>
 
-              {/* Add Issue Form */}
-              <form onSubmit={handleAddIssue} className="flex gap-2 w-full sm:w-auto">
-                <input
-                  type="text"
-                  placeholder="e.g. Broken wheel on cart..."
-                  value={newIssueText}
-                  onChange={(e) => setNewIssueText(e.target.value)}
-                  className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm focus:ring-2 focus:ring-amber-500 w-full sm:w-64"
-                />
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <button
-                  type="submit"
-                  disabled={!newIssueText.trim()}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs sm:text-sm transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                  type="button"
+                  onClick={() => openIssuesImportModal(activeArea.id)}
+                  className="px-3 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold rounded-xl text-xs sm:text-sm transition-colors flex items-center gap-1.5 shadow-sm"
+                  title={`Bulk Import Pre-Defined Issues for ${activeArea.name} from CSV`}
                 >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Issue</span>
+                  <Upload className="w-4 h-4 text-amber-600" />
+                  <span>Import CSV</span>
                 </button>
-              </form>
+
+                {/* Add Issue Form */}
+                <form onSubmit={handleAddIssue} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. Broken wheel on cart..."
+                    value={newIssueText}
+                    onChange={(e) => setNewIssueText(e.target.value)}
+                    className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm focus:ring-2 focus:ring-amber-500 w-full sm:w-60"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!newIssueText.trim()}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs sm:text-sm transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add</span>
+                  </button>
+                </form>
+              </div>
             </div>
 
             {/* Issues Grid */}
@@ -1098,7 +1556,19 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
               <div>
                 <label className="block font-bold text-slate-700 mb-1 flex items-center justify-between">
                   <span>Attached Rooms & Facilities</span>
-                  <span className="text-[11px] text-slate-400 font-normal">Separate with commas</span>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] text-amber-700 hover:text-amber-800 font-bold bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-lg cursor-pointer border border-amber-200 transition-colors inline-flex items-center gap-1 shadow-2xs">
+                      <Upload className="w-3 h-3 text-amber-600" />
+                      <span>Load Rooms from CSV</span>
+                      <input
+                        type="file"
+                        accept=".csv,.txt,.tsv"
+                        onChange={handleDirectCsvLoadForEditPlace}
+                        className="hidden"
+                      />
+                    </label>
+                    <span className="text-[11px] text-slate-400 font-normal">Separate with commas</span>
+                  </div>
                 </label>
                 <textarea
                   rows={3}
@@ -1215,7 +1685,19 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
               <div>
                 <label className="block font-bold text-slate-700 mb-1 flex items-center justify-between">
                   <span>Initial Rooms & Facilities</span>
-                  <span className="text-[11px] text-slate-400 font-normal">Separate with commas</span>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] text-amber-700 hover:text-amber-800 font-bold bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-lg cursor-pointer border border-amber-200 transition-colors inline-flex items-center gap-1 shadow-2xs">
+                      <Upload className="w-3 h-3 text-amber-600" />
+                      <span>Load Rooms from CSV</span>
+                      <input
+                        type="file"
+                        accept=".csv,.txt,.tsv"
+                        onChange={handleDirectCsvLoadForNewPlace}
+                        className="hidden"
+                      />
+                    </label>
+                    <span className="text-[11px] text-slate-400 font-normal">Separate with commas</span>
+                  </div>
                 </label>
                 <textarea
                   rows={2}
@@ -1254,6 +1736,253 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- UNIVERSAL CSV IMPORT MODAL --- */}
+      {importModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-xl w-full p-6 animate-fade-in space-y-4 max-h-[92vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-amber-500/10 text-amber-600 rounded-xl">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                    {importModal.type === 'rooms' && 'Import Campus Rooms & Facilities'}
+                    {importModal.type === 'assets' && 'Import Department Asset Categories'}
+                    {importModal.type === 'issues' && 'Import Pre-Defined Issues'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Load entries from a CSV/Excel file or paste spreadsheet columns directly
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setImportModal(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Scrollable Body */}
+            <div className="space-y-4 overflow-y-auto pr-1 flex-1 text-xs sm:text-sm">
+              {/* If type === rooms, Campus Selector */}
+              {importModal.type === 'rooms' && (
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Target Campus / Building
+                  </label>
+                  <select
+                    value={importTargetPlaceId}
+                    onChange={(e) => setImportTargetPlaceId(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500 font-semibold bg-white text-slate-800"
+                  >
+                    {places.map((place) => (
+                      <option key={place.id} value={place.id}>
+                        {place.name} ({place.rooms?.length || 0} existing rooms)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Import Mode: Append vs Replace */}
+              {importModal.type === 'rooms' && (
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="block font-bold text-slate-700 mb-2">Import Strategy</span>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <label className={`flex items-start gap-2 p-2.5 rounded-lg border cursor-pointer transition-colors ${importMode === 'append' ? 'bg-amber-50/70 border-amber-300 text-slate-900 font-bold' : 'bg-white border-slate-200 text-slate-600'}`}>
+                      <input
+                        type="radio"
+                        name="importMode"
+                        value="append"
+                        checked={importMode === 'append'}
+                        onChange={() => setImportMode('append')}
+                        className="mt-0.5 text-amber-600 focus:ring-amber-500"
+                      />
+                      <div>
+                        <span>Append / Merge</span>
+                        <p className="text-[11px] font-normal text-slate-500">Adds new items without removing current rooms</p>
+                      </div>
+                    </label>
+
+                    <label className={`flex items-start gap-2 p-2.5 rounded-lg border cursor-pointer transition-colors ${importMode === 'replace' ? 'bg-amber-50/70 border-amber-300 text-slate-900 font-bold' : 'bg-white border-slate-200 text-slate-600'}`}>
+                      <input
+                        type="radio"
+                        name="importMode"
+                        value="replace"
+                        checked={importMode === 'replace'}
+                        onChange={() => setImportMode('replace')}
+                        className="mt-0.5 text-amber-600 focus:ring-amber-500"
+                      />
+                      <div>
+                        <span>Replace List</span>
+                        <p className="text-[11px] font-normal text-slate-500">Overwrites all current rooms with the imported list</p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Input Method Switcher */}
+              <div>
+                <div className="flex items-center gap-1 border-b border-slate-200 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setImportMethod('file')}
+                    className={`px-3 py-1.5 font-bold text-xs border-b-2 transition-colors flex items-center gap-1.5 ${importMethod === 'file' ? 'border-amber-500 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Upload File (.csv, .tsv, .txt)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImportMethod('paste')}
+                    className={`px-3 py-1.5 font-bold text-xs border-b-2 transition-colors flex items-center gap-1.5 ${importMethod === 'paste' ? 'border-amber-500 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Paste Spreadsheet Data</span>
+                  </button>
+                </div>
+
+                {importMethod === 'file' ? (
+                  <div className="space-y-2">
+                    <label className="border-2 border-dashed border-slate-300 hover:border-amber-400 bg-slate-50/50 hover:bg-amber-50/30 transition-colors rounded-xl p-5 flex flex-col items-center justify-center cursor-pointer text-center group">
+                      <FileUp className="w-8 h-8 text-slate-400 group-hover:text-amber-500 mb-2 transition-colors" />
+                      <span className="font-bold text-slate-700 text-xs sm:text-sm">Click to select CSV or spreadsheet file</span>
+                      <span className="text-[11px] text-slate-400 mt-0.5">Supports .csv, .tsv, or tab/comma-delimited text</span>
+                      {importFileName && (
+                        <div className="mt-3 px-3 py-1 bg-amber-100 text-amber-800 rounded-lg text-xs font-bold inline-flex items-center gap-1.5">
+                          <Check className="w-3.5 h-3.5" />
+                          <span>{importFileName}</span>
+                        </div>
+                      )}
+                      <input
+                        type="file"
+                        accept=".csv,.txt,.tsv"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">
+                      Paste Data Directly
+                    </label>
+                    <textarea
+                      rows={5}
+                      value={rawImportText}
+                      onChange={handlePasteTextChange}
+                      placeholder="Paste one room/item per line, or copy-paste rows & columns directly from Excel or Google Sheets..."
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500 font-mono text-xs"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Sample Template & Auto-Detection Note */}
+              <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-blue-50/70 border border-blue-200/80 rounded-xl text-blue-900 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <Info className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                  <span>Column headers (e.g. <i>Room Name</i>, <i>Asset Category</i>) are auto-detected.</span>
+                </div>
+                {importModal.type === 'rooms' && (
+                  <button
+                    type="button"
+                    onClick={downloadSampleRoomsTemplate}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-white px-2 py-1 rounded-lg border border-blue-200 shadow-2xs"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>Download Sample CSV Template</span>
+                  </button>
+                )}
+                {importModal.type === 'assets' && (
+                  <button
+                    type="button"
+                    onClick={() => downloadSampleAssetsTemplate(getActiveArea()?.name)}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-white px-2 py-1 rounded-lg border border-blue-200 shadow-2xs"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>Download Sample CSV Template</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Parsed Items Preview */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-bold text-slate-700 text-xs">
+                    Items Detected for Import ({importItems.length})
+                  </span>
+                  {importItems.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setImportItems([])}
+                      className="text-[11px] text-red-600 hover:text-red-700 font-bold"
+                    >
+                      Clear All
+                    </button>
+                  )}
+                </div>
+
+                {importItems.length > 0 ? (
+                  <div className="max-h-36 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap gap-1.5">
+                    {importItems.map((item, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-slate-800 text-xs font-semibold shadow-2xs group"
+                      >
+                        <span>{item}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveImportItem(idx)}
+                          className="text-slate-400 hover:text-red-600 p-0.5"
+                          title="Remove item"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-4 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-400">
+                    No items detected yet. Upload a CSV file or paste spreadsheet rows above.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setImportModal(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-600 font-bold hover:bg-slate-50 text-xs sm:text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={importItems.length === 0 || isProcessingImport}
+                onClick={handleExecuteImport}
+                className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-extrabold shadow-sm text-xs sm:text-sm flex items-center gap-2"
+              >
+                {isProcessingImport ? (
+                  <span>Importing...</span>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Confirm & Import ({importItems.length} Items)</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
