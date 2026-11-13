@@ -232,9 +232,12 @@ export default function App() {
           />
         )}
 
-        {/* Module 3: ASSETS (Technology Hardware, Chromebooks, Displays, Workstations) */}
+        {/* Module 3: ASSETS / FLEET INVENTORY (Technology Hardware, Lenovo Warranty Sync, 5-Yr Replacement) */}
         {currentView === 'assets' && (
           <AssetsView 
+            catalog={catalog}
+            user={user}
+            userProfile={userProfile}
             onReportIssue={handleReportIssueFromAsset}
           />
         )}

@@ -8,7 +8,8 @@ import {
   Sliders, 
   User as UserIcon,
   Shield,
-  Calendar
+  Calendar,
+  Laptop
 } from 'lucide-react';
 import { signInWithGoogle, logoutUser } from '../services/firebase';
 import { ROLES } from '../data/rolesData';
@@ -22,6 +23,7 @@ export default function Navbar({
   const role = userProfile?.role || 'requester';
   const roleConfig = ROLES[role] || ROLES.requester;
   const isAdmin = role === 'admin';
+  const isItOrAdmin = ['admin', 'it_tech', 'agent'].includes(role);
   const isStaffOrTech = ['admin', 'agent', 'facilities_tech', 'housekeeping_tech', 'it_tech'].includes(role);
 
   return (
@@ -107,6 +109,21 @@ export default function Navbar({
               <Calendar className="w-4 h-4" />
               <span>Facility Calendar</span>
             </button>
+
+            {/* Fleet & Device Inventory (IT & Admins Only) */}
+            {isItOrAdmin && (
+              <button
+                onClick={() => setCurrentView('assets')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold tracking-wide transition-all whitespace-nowrap ${
+                  currentView === 'assets'
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 ring-1 ring-amber-400 font-black'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                }`}
+              >
+                <Laptop className="w-4 h-4" />
+                <span>Inventory</span>
+              </button>
+            )}
 
             {/* User Roles (Admin Only) */}
             {isAdmin && (
@@ -238,6 +255,20 @@ export default function Navbar({
             <Calendar className="w-3.5 h-3.5" />
             <span>Facility Calendar</span>
           </button>
+
+          {isItOrAdmin && (
+            <button
+              onClick={() => setCurrentView('assets')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${
+                currentView === 'assets'
+                  ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+              }`}
+            >
+              <Laptop className="w-3.5 h-3.5" />
+              <span>Inventory</span>
+            </button>
+          )}
 
           {isAdmin && (
             <>

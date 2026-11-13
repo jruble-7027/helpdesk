@@ -450,3 +450,196 @@ export const updateTicketStatus = async ({
 
   return statusEntry;
 };
+
+// ============================================================================
+// FLEET & DEVICE INVENTORY + LENOVO LIVE WARRANTY LOOKUP
+// ============================================================================
+
+/**
+ * Parses Lenovo's HTML specification table (<table class='ModelSpecification'>...)
+ * into both a structured key-value object and a clean summary string.
+ */
+export const parseLenovoSpecification = (specHtml) => {
+  if (!specHtml || typeof specHtml !== 'string') {
+    return { summary: '', map: {} };
+  }
+  const map = {};
+  const rowRegex = /<tr>\s*<td>(.*?)<\/td>\s*<td>(.*?)<\/td>\s*<\/tr>/gi;
+  let match;
+  while ((match = rowRegex.exec(specHtml)) !== null) {
+    const key = match[1].replace(/<[^>]+>/g, '').trim();
+    const val = match[2]
+      .replace(/<br\s*\/?>/gi, ', ')
+      .replace(/<[^>]+>/g, '')
+      .replace(/^1x\s+/i, '')
+      .trim();
+    if (key && val) {
+      map[key] = val;
+    }
+  }
+
+  const summaryParts = [];
+  if (map['Processor']) summaryParts.push(map['Processor'].replace(/\(.*?\)/g, '').trim());
+  if (map['Memory']) summaryParts.push(map['Memory']);
+  if (map['Hard Drive']) summaryParts.push(map['Hard Drive']);
+  if (map['Monitor']) summaryParts.push(map['Monitor']);
+  if (map['Operating System']) summaryParts.push(map['Operating System'].replace(/\(.*?\)/g, '').trim());
+
+  return {
+    summary: summaryParts.join(' • '),
+    map
+  };
+};
+
+/**
+ * Queries Lenovo's pcsupport.lenovo.com getIbaseInfo endpoint directly by serial number.
+ * Returns normalized device model, purchase date, warranty dates, tier, and hardware specs.
+ */
+export const lookupLenovoWarranty = async (serialNumber) => {
+  const cleanSerial = (serialNumber || '').trim().toUpperCase();
+  if (!cleanSerial) {
+    throw new Error('Please enter a valid Serial Number.');
+  }
+
+  const response = await fetch('https://pcsupport.lenovo.com/us/en/api/v4/upsell/redport/getIbaseInfo', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      serialNumber: cleanSerial,
+      machineType: '',
+      country: 'us',
+      language: 'en'
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Lenovo lookup returned HTTP ${response.status}`);
+  }
+
+  const json = await response.json();
+  if (!json || json.code !== 0 || !json.data || !json.data.machineInfo) {
+    throw new Error(json?.msg?.desc || `No Lenovo device found for serial "${cleanSerial}".`);
+  }
+
+  const { machineInfo, currentWarranty, baseWarranties = [], upgradeWarranties = [], contractWarranties = [] } = json.data;
+  const parsedSpecs = parseLenovoSpecification(machineInfo.specification);
+
+  // Determine best / latest warranty across base, upgrade, and contract warranties
+  const allWarranties = [
+    ...(currentWarranty ? [currentWarranty] : []),
+    ...upgradeWarranties,
+    ...contractWarranties,
+    ...baseWarranties
+  ];
+
+  let latestEndDate = currentWarranty?.endDate || '';
+  let earliestStartDate = currentWarranty?.startDate || machineInfo.baseStartDate || machineInfo.popDate || '';
+  let bestWarranty = currentWarranty || allWarranties[0] || {};
+
+  allWarranties.forEach((w) => {
+    if (w.endDate && (!latestEndDate || w.endDate > latestEndDate)) {
+      latestEndDate = w.endDate;
+      bestWarranty = w;
+    }
+    if (w.startDate && (!earliestStartDate || w.startDate < earliestStartDate)) {
+      earliestStartDate = w.startDate;
+    }
+  });
+
+  const now = new Date();
+  const endDateObj = latestEndDate ? new Date(latestEndDate + 'T23:59:59') : null;
+  const remainingDays = endDateObj ? Math.max(0, Math.ceil((endDateObj - now) / (1000 * 60 * 60 * 24))) : 0;
+  const inWarranty = remainingDays > 0;
+
+  // Clean up product name for display
+  let cleanName = machineInfo.productName || `Lenovo ${machineInfo.type || ''}`;
+  if (!cleanName.toLowerCase().includes('lenovo')) {
+    cleanName = `Lenovo ${cleanName}`;
+  }
+
+  // Purchase date priority: popDate (proof of purchase) -> baseStartDate -> shipDate -> buildDate
+  const purchaseDate = machineInfo.popDate || machineInfo.baseStartDate || machineInfo.shipDate || machineInfo.buildDate || '';
+
+  return {
+    found: true,
+    vendor: 'Lenovo',
+    serial: machineInfo.serial || cleanSerial,
+    name: cleanName,
+    mtm: machineInfo.product || '',
+    machineType: machineInfo.type || '',
+    buildDate: machineInfo.buildDate || '',
+    shipDate: machineInfo.shipDate || '',
+    purchaseDate,
+    eosDate: machineInfo.eosDate || '',
+    productImage: machineInfo.productImage || '',
+    specs: parsedSpecs.summary || '',
+    specsMap: parsedSpecs.map || {},
+    warrantyName: bestWarranty.name || 'Standard Warranty',
+    warrantyTier: bestWarranty.deliveryTypeName || bestWarranty.deliveryType || 'Depot Support',
+    warrantyDescription: bestWarranty.description || '',
+    warrantyStartDate: earliestStartDate,
+    warrantyEndDate: latestEndDate,
+    warrantyRemainingDays: remainingDays,
+    warrantyStatus: inWarranty ? 'In Warranty' : 'Out of Warranty',
+    inWarranty,
+    pcsupportUrl: `https://pcsupport.lenovo.com/us/en/Search?query=${encodeURIComponent(cleanSerial)}`
+  };
+};
+
+// Subscribe to fleet inventory items in Firestore
+export const subscribeToInventory = (callback) => {
+  const invCol = collection(db, 'inventory');
+  return onSnapshot(invCol, (snapshot) => {
+    const items = snapshot.docs.map((d) => ({
+      id: d.id,
+      ...d.data()
+    }));
+    // Sort by newest or name
+    items.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    callback(items);
+  }, (err) => {
+    console.warn("Inventory listener error:", err);
+    callback([]);
+  });
+};
+
+// Create or update a single inventory device
+export const saveInventoryDevice = async (deviceData) => {
+  const { id, ...rest } = deviceData;
+  // Compute 5-year replacement date if purchaseDate is provided
+  let replacementDate = rest.replacementDate || '';
+  const cycleYears = Number(rest.replacementCycleYears) || 5;
+  if (rest.purchaseDate) {
+    const dt = new Date(rest.purchaseDate + 'T12:00:00');
+    if (!isNaN(dt.getTime())) {
+      dt.setFullYear(dt.getFullYear() + cycleYears);
+      replacementDate = dt.toISOString().split('T')[0];
+    }
+  }
+
+  const payload = {
+    ...rest,
+    replacementCycleYears: cycleYears,
+    replacementDate,
+    updatedAt: serverTimestamp()
+  };
+
+  if (id && !String(id).startsWith('seed-')) {
+    const docRef = doc(db, 'inventory', id);
+    await setDoc(docRef, payload, { merge: true });
+    return { id, ...payload };
+  } else {
+    payload.createdAt = serverTimestamp();
+    const docRef = await addDoc(collection(db, 'inventory'), payload);
+    return { id: docRef.id, ...payload };
+  }
+};
+
+// Delete an inventory device
+export const deleteInventoryDevice = async (deviceId) => {
+  if (!deviceId) return;
+  await deleteDoc(doc(db, 'inventory', deviceId));
+};
+
