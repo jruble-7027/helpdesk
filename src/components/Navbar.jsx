@@ -67,7 +67,7 @@ export default function Navbar({ user, userProfile, currentView, setCurrentView 
                 }`}
               >
                 <LayoutDashboard className="w-4 h-4" />
-                <span>Staff Queue</span>
+                <span>Ticket Queue</span>
               </button>
             )}
 
