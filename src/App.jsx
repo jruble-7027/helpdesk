@@ -11,6 +11,7 @@ import FieldCustomizer from './components/FieldCustomizer';
 import AssetsView from './components/AssetsView';
 import PartsView from './components/PartsView';
 import PlacesView from './components/PlacesView';
+import FacilitiesCalendar from './components/FacilitiesCalendar';
 import ErrorBoundary from './components/ErrorBoundary';
 
 export default function App() {
@@ -264,6 +265,16 @@ export default function App() {
           />
         )}
 
+        {/* Module 7: CALENDAR (Incident IQ Facilities & Event Setup Schedule) */}
+        {currentView === 'calendar' && (
+          <FacilitiesCalendar 
+            onNavigateToSubmit={() => {
+              setSelectedArea(null);
+              setCurrentView('submit');
+            }}
+          />
+        )}
+
         {/* Sub-view: Field & Issue Customizer (Admin Configuration) */}
         {currentView === 'customizer' && (
           <FieldCustomizer 
@@ -286,6 +297,8 @@ export default function App() {
             <span>DASH</span>
             <span>•</span>
             <span>TICKETS</span>
+            <span>•</span>
+            <span>CALENDAR</span>
             <span>•</span>
             <span>ASSETS</span>
             <span>•</span>

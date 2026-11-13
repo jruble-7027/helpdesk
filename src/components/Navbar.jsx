@@ -7,7 +7,8 @@ import {
   Users, 
   Sliders, 
   User as UserIcon,
-  Shield
+  Shield,
+  Calendar
 } from 'lucide-react';
 import { signInWithGoogle, logoutUser } from '../services/firebase';
 import { ROLES } from '../data/rolesData';
@@ -92,6 +93,19 @@ export default function Navbar({
                 <span>Ticket Queue</span>
               </button>
             )}
+
+            {/* Facility & Event Setup Calendar */}
+            <button
+              onClick={() => setCurrentView('calendar')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold tracking-wide transition-all whitespace-nowrap ${
+                currentView === 'calendar'
+                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 ring-1 ring-amber-400 font-black'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              <span>Facility Calendar</span>
+            </button>
 
             {/* User Roles (Admin Only) */}
             {isAdmin && (
@@ -211,6 +225,18 @@ export default function Navbar({
               <span>Ticket Queue</span>
             </button>
           )}
+
+          <button
+            onClick={() => setCurrentView('calendar')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${
+              currentView === 'calendar'
+                ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
+                : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span>Facility Calendar</span>
+          </button>
 
           {isAdmin && (
             <>
