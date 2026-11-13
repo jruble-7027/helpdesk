@@ -22,13 +22,15 @@ import {
   ExternalLink,
   MessageSquare,
   User,
+  UserCheck,
+  Briefcase,
   Building,
   ShieldAlert,
   Send,
   Trash2
 } from 'lucide-react';
-import { db, deleteTicket } from '../services/firebase';
-import { canModifyTicket, canCloseTicket } from '../data/rolesData';
+import { db, deleteTicket, subscribeToStaffMembers, assignTicket } from '../services/firebase';
+import { canModifyTicket, canCloseTicket, ROLES } from '../data/rolesData';
 
 const STATUS_CONFIG = {
   new: { label: 'New', badge: 'bg-blue-100 text-blue-800 border-blue-300' },
@@ -58,9 +60,23 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTicket, setSelectedTicket] = useState(null);
   
+  // Staff & Technician Assignment state
+  const [staffMembers, setStaffMembers] = useState([]);
+  const [myTicketsSubTab, setMyTicketsSubTab] = useState(role !== 'requester' ? 'assigned' : 'submitted');
+
   // Note adding state
   const [newNote, setNewNote] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
+
+  // Subscribe to Staff members for ticket assignment
+  useEffect(() => {
+    const unsubStaff = subscribeToStaffMembers((members) => {
+      setStaffMembers(members);
+    });
+    return () => {
+      if (unsubStaff) unsubStaff();
+    };
+  }, []);
 
   // Real-time Firestore subscription
   useEffect(() => {
@@ -166,6 +182,38 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
     }
   };
 
+  const handleAssignTicket = async (assigneeEmail) => {
+    if (!selectedTicket) return;
+    setIsUpdating(true);
+    try {
+      const targetUser = staffMembers.find((s) => s.email?.toLowerCase() === assigneeEmail?.toLowerCase()) || null;
+      await assignTicket(selectedTicket.id, targetUser, user);
+
+      const historyEntry = {
+        status: targetUser ? 'assigned' : 'new',
+        timestamp: new Date().toISOString(),
+        updatedBy: user?.displayName || user?.email || 'Staff Dispatcher',
+        note: targetUser 
+          ? `Ticket assigned to ${targetUser.displayName || targetUser.email}` 
+          : 'Ticket unassigned'
+      };
+
+      setSelectedTicket((prev) => ({
+        ...prev,
+        assignedToEmail: targetUser ? targetUser.email : null,
+        assignedToName: targetUser ? (targetUser.displayName || targetUser.email) : null,
+        assignedToUid: targetUser ? (targetUser.uid || targetUser.id) : null,
+        status: targetUser ? (prev.status === 'new' ? 'assigned' : prev.status) : prev.status,
+        statusHistory: [...(prev.statusHistory || []), historyEntry]
+      }));
+    } catch (err) {
+      console.error("Failed to assign ticket:", err);
+      alert("Failed to assign technician. Please verify permissions.");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   const handleDeleteSelectedTicket = async () => {
     if (!selectedTicket) return;
     const confirm = window.confirm(`Permanently delete ticket "${selectedTicket.title}"?`);
@@ -183,11 +231,29 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
   const canModify = (ticketAreaId) => canModifyTicket(role, ticketAreaId);
   const canClose = (ticketAreaId) => canCloseTicket(role, ticketAreaId);
 
+  const userEmailLower = (user?.email || '').toLowerCase();
+
+  // Counts for My Tickets subtabs
+  const assignedToMeCount = tickets.filter((t) => (t.assignedToEmail || '').toLowerCase() === userEmailLower).length;
+  const submittedByMeCount = tickets.filter((t) => {
+    const creator = (t.createdByEmail || t.requester?.email || '').toLowerCase();
+    return creator === userEmailLower;
+  }).length;
+
   // Filter tickets
   const filteredTickets = tickets.filter((t) => {
-    const ticketEmail = t.createdByEmail || t.requester?.email;
-    if (filterByMyTickets && user?.email && ticketEmail !== user.email) {
-      return false;
+    if (filterByMyTickets && userEmailLower) {
+      const ticketEmail = (t.createdByEmail || t.requester?.email || '').toLowerCase();
+      const isSubmitted = ticketEmail === userEmailLower;
+      const isAssigned = (t.assignedToEmail || '').toLowerCase() === userEmailLower;
+
+      if (role !== 'requester') {
+        if (myTicketsSubTab === 'assigned' && !isAssigned) return false;
+        if (myTicketsSubTab === 'submitted' && !isSubmitted) return false;
+        if (myTicketsSubTab === 'all' && !isAssigned && !isSubmitted) return false;
+      } else {
+        if (!isSubmitted) return false;
+      }
     }
     const ticketArea = t.areaId || t.department;
     if (selectedArea !== 'all' && ticketArea !== selectedArea) {
@@ -204,7 +270,8 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
       const matchRoom = (t.roomLocation || '').toLowerCase().includes(q);
       const matchUser = (t.createdByName || t.createdByEmail || '').toLowerCase().includes(q);
       const matchAsset = (t.assetType || t.assetTag || '').toLowerCase().includes(q);
-      return matchNum || matchTitle || matchDesc || matchRoom || matchUser || matchAsset;
+      const matchAssignee = (t.assignedToName || t.assignedToEmail || '').toLowerCase().includes(q);
+      return matchNum || matchTitle || matchDesc || matchRoom || matchUser || matchAsset || matchAssignee;
     }
     return true;
   });
@@ -284,9 +351,55 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
 
       {/* Title Header for My Tickets */}
       {filterByMyTickets && (
-        <div className="mb-6">
-          <h2 className="text-2xl font-extrabold text-slate-900">My Submitted Tickets</h2>
-          <p className="text-sm text-slate-600">Track status updates and communication from technicians on your requests.</p>
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-extrabold text-slate-900">
+              {role !== 'requester' ? 'My Assigned & Submitted Tickets' : 'My Submitted Tickets'}
+            </h2>
+            <p className="text-sm text-slate-600">
+              {role !== 'requester' 
+                ? 'Quickly view tickets assigned to your technician queue or requests you submitted.' 
+                : 'Track status updates and communication from technicians on your requests.'}
+            </p>
+          </div>
+
+          {/* Sub-tabs for Staff / Technicians */}
+          {role !== 'requester' && (
+            <div className="inline-flex rounded-xl bg-slate-200/80 p-1 border border-slate-300 self-start sm:self-auto">
+              <button
+                onClick={() => setMyTicketsSubTab('assigned')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  myTicketsSubTab === 'assigned'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'text-slate-700 hover:text-slate-950'
+                }`}
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                <span>Assigned to Me ({assignedToMeCount})</span>
+              </button>
+              <button
+                onClick={() => setMyTicketsSubTab('submitted')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  myTicketsSubTab === 'submitted'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-700 hover:text-slate-950'
+                }`}
+              >
+                <User className="w-3.5 h-3.5" />
+                <span>Submitted by Me ({submittedByMeCount})</span>
+              </button>
+              <button
+                onClick={() => setMyTicketsSubTab('all')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  myTicketsSubTab === 'all'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-slate-700 hover:text-slate-950'
+                }`}
+              >
+                All ({assignedToMeCount + submittedByMeCount})
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -358,7 +471,7 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
                           {ticket.ticketNumber || (ticket.id ? `TICK-${ticket.id.slice(-6)}` : 'TICK')}
                         </span>
@@ -369,6 +482,17 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
                           <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-300 flex items-center gap-1">
                             <AlertTriangle className="w-3 h-3" /> EMERGENCY
                           </span>
+                        )}
+                        {ticket.assignedToEmail && (
+                          ticket.assignedToEmail.toLowerCase() === userEmailLower ? (
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+                              <UserCheck className="w-3 h-3 text-amber-600" /> Assigned to You
+                            </span>
+                          ) : (
+                            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1" title={`Assigned to ${ticket.assignedToName || ticket.assignedToEmail}`}>
+                              <UserCheck className="w-3 h-3 text-indigo-500" /> {ticket.assignedToName || ticket.assignedToEmail}
+                            </span>
+                          )
                         )}
                       </div>
                       <h4 className="text-base font-bold text-slate-900 hover:text-amber-600 transition-colors">
@@ -398,9 +522,17 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
                       <span className="hidden sm:inline text-slate-600 font-medium">{ticket.assetType || ticket.assetCategory || 'Support Request'}</span>
                     </div>
 
-                    <div className="flex items-center gap-1 text-slate-400">
-                      <User className="w-3.5 h-3.5" />
-                      <span>{ticket.createdByName || ticket.requester?.name || ticket.createdByEmail || ticket.requester?.email || 'Staff Requester'}</span>
+                    <div className="flex items-center gap-3">
+                      {ticket.assignedToName && (
+                        <span className="flex items-center gap-1 text-slate-600 font-medium bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
+                          <UserCheck className="w-3.5 h-3.5 text-amber-600" />
+                          <span>{ticket.assignedToName}</span>
+                        </span>
+                      )}
+                      <div className="flex items-center gap-1 text-slate-400">
+                        <User className="w-3.5 h-3.5" />
+                        <span>{ticket.createdByName || ticket.requester?.name || ticket.createdByEmail || ticket.requester?.email || 'Staff Requester'}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -440,6 +572,57 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
                 </button>
               </div>
             </div>
+
+            {/* Assign Technician Selector (Permitted Users Only) */}
+            {canModify(selectedTicket.areaId) ? (
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                    <UserCheck className="w-4 h-4 text-amber-500" />
+                    <span>Assign Technician</span>
+                  </label>
+                  {selectedTicket.assignedToEmail ? (
+                    <span className="text-[11px] font-bold text-indigo-800 bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-full">
+                      Assigned
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-medium text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full">
+                      Unassigned
+                    </span>
+                  )}
+                </div>
+
+                <select
+                  value={selectedTicket.assignedToEmail || ''}
+                  disabled={isUpdating}
+                  onChange={(e) => handleAssignTicket(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm font-semibold bg-white text-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                >
+                  <option value="">-- Unassigned (Department Queue) --</option>
+                  {staffMembers.map((staff) => (
+                    <option key={staff.id || staff.email} value={staff.email}>
+                      {staff.displayName || staff.email} ({ROLES[staff.role]?.label || staff.role})
+                    </option>
+                  ))}
+                </select>
+
+                {selectedTicket.assignedToName && (
+                  <p className="mt-2 text-[11px] text-slate-600 flex items-center gap-1">
+                    <span>Handling technician:</span>
+                    <strong className="text-slate-900">{selectedTicket.assignedToName}</strong>
+                    <span className="text-slate-400">({selectedTicket.assignedToEmail})</span>
+                  </p>
+                )}
+              </div>
+            ) : selectedTicket.assignedToName ? (
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Assigned Technician:</span>
+                <span className="font-bold text-slate-900 flex items-center gap-1.5">
+                  <UserCheck className="w-3.5 h-3.5 text-amber-600" />
+                  <span>{selectedTicket.assignedToName}</span>
+                </span>
+              </div>
+            ) : null}
 
             {/* Quick Status Update Selector (Permitted Users Only) */}
             {canModify(selectedTicket.areaId) ? (
@@ -505,6 +688,14 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
                 <div className="flex justify-between py-1 border-b border-slate-100">
                   <span className="text-slate-500">Asset Tag / Serial:</span>
                   <span className="font-mono font-semibold">{selectedTicket.assetTag}</span>
+                </div>
+              )}
+              {selectedTicket.assignedToName && (
+                <div className="flex justify-between py-1 border-b border-slate-100">
+                  <span className="text-slate-500">Assigned To:</span>
+                  <span className="font-semibold text-slate-800">
+                    {selectedTicket.assignedToName} ({selectedTicket.assignedToEmail})
+                  </span>
                 </div>
               )}
               <div className="flex justify-between py-1 border-b border-slate-100">

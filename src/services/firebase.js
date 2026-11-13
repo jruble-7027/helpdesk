@@ -20,7 +20,8 @@ import {
   where, 
   orderBy, 
   serverTimestamp, 
-  onSnapshot 
+  onSnapshot,
+  arrayUnion 
 } from 'firebase/firestore';
 import { 
   getStorage, 
@@ -209,4 +210,48 @@ export const submitTicket = async (ticketData, files = []) => {
 export const deleteTicket = async (ticketId) => {
   const ticketRef = doc(db, 'tickets', ticketId);
   await deleteDoc(ticketRef);
+};
+
+// Staff Members (Technicians, Admins, Agents)
+export const subscribeToStaffMembers = (callback) => {
+  const q = query(collection(db, 'users'));
+  return onSnapshot(q, (snapshot) => {
+    const staff = snapshot.docs
+      .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+      .filter((u) => ['admin', 'agent', 'facilities_tech', 'housekeeping_tech', 'it_tech'].includes(u.role))
+      .sort((a, b) => (a.displayName || a.email || '').localeCompare(b.displayName || b.email || ''));
+    callback(staff);
+  }, (err) => {
+    console.warn("Error fetching staff members:", err);
+    callback([]);
+  });
+};
+
+// Assign ticket to a technician
+export const assignTicket = async (ticketId, assigneeUser, assignedBy) => {
+  const ticketRef = doc(db, 'tickets', ticketId);
+  const assigneeName = assigneeUser ? (assigneeUser.displayName || assigneeUser.email) : null;
+  const assigneeEmail = assigneeUser ? assigneeUser.email : null;
+  const assigneeUid = assigneeUser ? (assigneeUser.uid || assigneeUser.id) : null;
+
+  const historyEntry = {
+    status: assigneeUser ? 'assigned' : 'new',
+    timestamp: new Date().toISOString(),
+    updatedBy: assignedBy?.displayName || assignedBy?.email || 'Dispatcher',
+    note: assigneeUser ? `Ticket assigned to ${assigneeName}` : 'Ticket unassigned'
+  };
+
+  const updatePayload = {
+    assignedToName: assigneeName,
+    assignedToEmail: assigneeEmail,
+    assignedToUid: assigneeUid,
+    statusHistory: arrayUnion(historyEntry),
+    updatedAt: serverTimestamp()
+  };
+
+  if (assigneeUser) {
+    updatePayload.status = 'assigned';
+  }
+
+  await updateDoc(ticketRef, updatePayload);
 };
