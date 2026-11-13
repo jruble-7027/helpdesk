@@ -108,15 +108,43 @@ export const URGENCY_LEVELS = [
   { id: 'emergency', label: 'Emergency / Safety Hazard', description: 'Immediate safety or property danger (spill hazard, pipe burst, power loss)', color: 'bg-red-100 text-red-800 border-red-300' }
 ];
 
-export const BUILDINGS = [
-  'Main Building',
-  'Elementary Wing',
-  'Middle School Wing',
-  'High School Wing',
-  'Gymnasium / Athletic Center',
-  'Cafeteria / Commons',
-  'Fine Arts / Music Building',
-  'STEM / Science Labs',
-  'Administration & Business Office',
-  'Campus Grounds / Outdoor'
+export const DEFAULT_PLACES = [
+  {
+    id: 'secondary',
+    name: 'WCA Secondary School',
+    type: 'High School / Middle School',
+    address: '301 County Rd 11, Barrett, MN 56311',
+    roomsCount: 48,
+    leadTech: 'Jonathan Ruble',
+    wings: 'Science Labs, High School Media Center, STEM & Industrial Tech, Auditorium, Varsity Gym'
+  },
+  {
+    id: 'north_elem',
+    name: 'WCA North Elementary',
+    type: 'Elementary School',
+    address: '411 1st St SE, Elbow Lake, MN 56531',
+    roomsCount: 32,
+    leadTech: 'Support Team',
+    wings: 'Early Childhood, Kindergarten & Grades 1-4, Media Center, Multipurpose Gym'
+  },
+  {
+    id: 'south_elem',
+    name: 'WCA South Elementary',
+    type: 'Elementary School',
+    address: 'Kensington, MN',
+    roomsCount: 28,
+    leadTech: 'Support Team',
+    wings: 'Elementary Classrooms, Cafeteria, Gymnasium, Nurse'
+  },
+  {
+    id: 'district_office',
+    name: 'District Administration Office',
+    type: 'District Services',
+    address: 'Barrett, MN 56311',
+    roomsCount: 12,
+    leadTech: 'Jonathan Ruble',
+    wings: 'Superintendent Office, Business & Payroll Office, Central Server Room'
+  }
 ];
+
+export const BUILDINGS = DEFAULT_PLACES.map((p) => p.name);

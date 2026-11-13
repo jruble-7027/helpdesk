@@ -30,7 +30,7 @@ import {
   getDownloadURL 
 } from 'firebase/storage';
 import { SUPER_ADMIN_EMAILS } from '../data/rolesData';
-import { AREAS as DEFAULT_AREAS, BUILDINGS as DEFAULT_BUILDINGS } from '../data/categoriesData';
+import { AREAS as DEFAULT_AREAS, BUILDINGS as DEFAULT_BUILDINGS, DEFAULT_PLACES } from '../data/categoriesData';
 
 // Production Firebase Configuration for WCA Tickets
 const firebaseConfig = {
@@ -125,31 +125,39 @@ export const updateUserRole = async (targetUid, newRole, department = 'general')
   });
 };
 
-// --- Custom Catalog & Settings (Buildings, Asset Lists, Pre-Defined Issues) ---
-
+// Custom Catalog & Settings (Buildings, Places, Asset Lists, Pre-Defined Issues)
 export const subscribeToCatalog = (callback) => {
   const catalogRef = doc(db, 'settings', 'catalog');
   return onSnapshot(catalogRef, async (docSnap) => {
     if (docSnap.exists()) {
-      callback(docSnap.data());
+      const data = docSnap.data();
+      // Ensure places is populated and in sync
+      if (!data.places || !Array.isArray(data.places) || data.places.length === 0) {
+        data.places = DEFAULT_PLACES;
+      }
+      if (!data.buildings || data.buildings.length === 0) {
+        data.buildings = data.places.map((p) => p.name);
+      }
+      callback(data);
     } else {
       // Auto-seed initial defaults into Firestore
       const initialCatalog = {
-        buildings: DEFAULT_BUILDINGS,
+        places: DEFAULT_PLACES,
+        buildings: DEFAULT_PLACES.map((p) => p.name),
         areas: DEFAULT_AREAS,
         updatedAt: serverTimestamp()
       };
       try {
         await setDoc(catalogRef, initialCatalog);
-        callback({ buildings: DEFAULT_BUILDINGS, areas: DEFAULT_AREAS });
+        callback(initialCatalog);
       } catch (err) {
         console.warn("Could not seed settings/catalog:", err);
-        callback({ buildings: DEFAULT_BUILDINGS, areas: DEFAULT_AREAS });
+        callback({ places: DEFAULT_PLACES, buildings: DEFAULT_PLACES.map((p) => p.name), areas: DEFAULT_AREAS });
       }
     }
   }, (err) => {
     console.warn("Catalog listener fallback to defaults:", err);
-    callback({ buildings: DEFAULT_BUILDINGS, areas: DEFAULT_AREAS });
+    callback({ places: DEFAULT_PLACES, buildings: DEFAULT_PLACES.map((p) => p.name), areas: DEFAULT_AREAS });
   });
 };
 

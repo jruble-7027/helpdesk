@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, signInWithGoogle, syncUserProfile, subscribeToUserProfile, subscribeToCatalog } from './services/firebase';
-import { AREAS, BUILDINGS } from './data/categoriesData';
+import { auth, signInWithGoogle, syncUserProfile, subscribeToUserProfile, subscribeToCatalog, saveCatalogSettings } from './services/firebase';
+import { AREAS, BUILDINGS, DEFAULT_PLACES } from './data/categoriesData';
 import Navbar from './components/Navbar';
 import LandingAreaPicker from './components/LandingAreaPicker';
 import TicketSubmissionForm from './components/TicketSubmissionForm';
@@ -18,13 +18,17 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'submit' | 'my-tickets' | 'assets' | 'parts' | 'users' | 'places' | 'customizer'
   const [selectedArea, setSelectedArea] = useState(null);
-  const [catalog, setCatalog] = useState({ buildings: BUILDINGS, areas: AREAS });
+  const [catalog, setCatalog] = useState({ buildings: BUILDINGS, areas: AREAS, places: DEFAULT_PLACES });
 
   useEffect(() => {
     // Subscribe to dynamic fields/issues catalog
     const unsubscribeCatalog = subscribeToCatalog((catData) => {
       if (catData) {
-        setCatalog(catData);
+        setCatalog({
+          places: catData.places || DEFAULT_PLACES,
+          buildings: catData.buildings || (catData.places ? catData.places.map((p) => p.name) : BUILDINGS),
+          areas: catData.areas || AREAS
+        });
       }
     });
 
@@ -76,7 +80,6 @@ export default function App() {
   };
 
   const handleReportIssueFromAsset = (assetName) => {
-    // Pre-select ITSM or Facilities depending on asset and route to submit
     const itsmArea = catalog.areas?.find((a) => a.id === 'itsm') || catalog.areas?.[0];
     setSelectedArea(itsmArea);
     setCurrentView('submit');
@@ -87,6 +90,60 @@ export default function App() {
     setSelectedArea(facilitiesArea);
     setCurrentView('submit');
   };
+
+  // Place handlers
+  const handleSavePlace = async (updatedPlace) => {
+    const currentPlaces = catalog.places || DEFAULT_PLACES;
+    const newPlaces = currentPlaces.map((p) => (p.id === updatedPlace.id ? updatedPlace : p));
+    const newBuildings = newPlaces.map((p) => p.name);
+    const updatedCatalog = {
+      ...catalog,
+      places: newPlaces,
+      buildings: newBuildings
+    };
+    setCatalog(updatedCatalog);
+    try {
+      await saveCatalogSettings(updatedCatalog);
+    } catch (err) {
+      console.error("Error saving place update:", err);
+    }
+  };
+
+  const handleAddPlace = async (newPlace) => {
+    const currentPlaces = catalog.places || DEFAULT_PLACES;
+    const newPlaces = [...currentPlaces, newPlace];
+    const newBuildings = newPlaces.map((p) => p.name);
+    const updatedCatalog = {
+      ...catalog,
+      places: newPlaces,
+      buildings: newBuildings
+    };
+    setCatalog(updatedCatalog);
+    try {
+      await saveCatalogSettings(updatedCatalog);
+    } catch (err) {
+      console.error("Error adding place:", err);
+    }
+  };
+
+  const handleDeletePlace = async (placeId) => {
+    const currentPlaces = catalog.places || DEFAULT_PLACES;
+    const newPlaces = currentPlaces.filter((p) => p.id !== placeId);
+    const newBuildings = newPlaces.map((p) => p.name);
+    const updatedCatalog = {
+      ...catalog,
+      places: newPlaces,
+      buildings: newBuildings
+    };
+    setCatalog(updatedCatalog);
+    try {
+      await saveCatalogSettings(updatedCatalog);
+    } catch (err) {
+      console.error("Error deleting place:", err);
+    }
+  };
+
+  const isStaffOrAdmin = ['admin', 'agent', 'facilities_tech', 'housekeeping_tech', 'it_tech'].includes(userProfile?.role);
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
@@ -172,7 +229,11 @@ export default function App() {
         {/* Module 6: PLACES (Campuses, Buildings, Wings, Classrooms) */}
         {currentView === 'places' && (
           <PlacesView 
-            isAdmin={userProfile?.role === 'admin'}
+            placesList={catalog.places || DEFAULT_PLACES}
+            onSavePlace={handleSavePlace}
+            onAddPlace={handleAddPlace}
+            onDeletePlace={handleDeletePlace}
+            isAdmin={isStaffOrAdmin}
             onOpenCustomizer={() => setCurrentView('customizer')}
           />
         )}

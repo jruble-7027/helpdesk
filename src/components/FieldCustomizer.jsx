@@ -14,25 +14,41 @@ import {
   CheckCircle, 
   AlertCircle,
   Sliders,
-  Tag
+  Tag,
+  MapPin,
+  User,
+  Layers
 } from 'lucide-react';
 import { saveCatalogSettings } from '../services/firebase';
-import { AREAS as DEFAULT_AREAS, BUILDINGS as DEFAULT_BUILDINGS } from '../data/categoriesData';
+import { AREAS as DEFAULT_AREAS, BUILDINGS as DEFAULT_BUILDINGS, DEFAULT_PLACES } from '../data/categoriesData';
 
 export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
   const [activeTab, setActiveTab] = useState('buildings'); // 'buildings' | 'facilities' | 'housekeeping' | 'itsm'
-  const [buildings, setBuildings] = useState(catalog?.buildings || DEFAULT_BUILDINGS);
+  const [places, setPlaces] = useState(catalog?.places || DEFAULT_PLACES);
+  const [buildings, setBuildings] = useState(catalog?.buildings || DEFAULT_PLACES.map(p => p.name));
   const [areas, setAreas] = useState(catalog?.areas || DEFAULT_AREAS);
 
   useEffect(() => {
-    if (catalog?.buildings) setBuildings(catalog.buildings);
+    if (catalog?.places) {
+      setPlaces(catalog.places);
+      setBuildings(catalog.places.map(p => p.name));
+    } else if (catalog?.buildings) {
+      setBuildings(catalog.buildings);
+    }
     if (catalog?.areas) setAreas(catalog.areas);
   }, [catalog]);
 
-  // In-place edit states
-  const [editingBuildingIndex, setEditingBuildingIndex] = useState(null);
-  const [editBuildingText, setEditBuildingText] = useState('');
-  const [newBuildingText, setNewBuildingText] = useState('');
+  // Place / Campus editing states
+  const [editingPlace, setEditingPlace] = useState(null);
+  const [showAddPlaceModal, setShowAddPlaceModal] = useState(false);
+  const [newPlaceData, setNewPlaceData] = useState({
+    name: '',
+    address: '',
+    type: 'School Facility',
+    leadTech: 'Support Team',
+    roomsCount: 25,
+    wings: 'Main Classrooms, Library, Cafeteria, Gymnasium'
+  });
 
   // Department edit states
   const [newAssetText, setNewAssetText] = useState('');
@@ -51,11 +67,14 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
     setTimeout(() => setToastMsg(''), 3500);
   };
 
-  const persistChanges = async (updatedBuildings, updatedAreas) => {
+  const persistChanges = async (updatedPlaces, updatedAreas) => {
     setSaving(true);
     try {
+      const placesToSave = updatedPlaces || places;
+      const buildingsToSave = placesToSave.map(p => p.name);
       const payload = {
-        buildings: updatedBuildings || buildings,
+        places: placesToSave,
+        buildings: buildingsToSave,
         areas: updatedAreas || areas
       };
       await saveCatalogSettings(payload);
@@ -69,40 +88,49 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
     }
   };
 
-  // --- Building Handlers ---
-  const handleAddBuilding = (e) => {
+  // --- Place / Building Handlers ---
+  const handleSavePlaceEdit = (e) => {
     e.preventDefault();
-    const trimmed = newBuildingText.trim();
-    if (!trimmed) return;
-    if (buildings.includes(trimmed)) {
-      alert('A building with this name already exists.');
-      return;
-    }
-    const updated = [...buildings, trimmed];
-    setBuildings(updated);
-    setNewBuildingText('');
+    if (!editingPlace.name.trim()) return;
+    const updated = places.map((p) => p.id === editingPlace.id ? editingPlace : p);
+    setPlaces(updated);
+    setBuildings(updated.map(p => p.name));
+    setEditingPlace(null);
     persistChanges(updated, areas);
   };
 
-  const handleSaveBuildingEdit = (index) => {
-    const trimmed = editBuildingText.trim();
-    if (!trimmed) return;
-    const updated = [...buildings];
-    updated[index] = trimmed;
-    setBuildings(updated);
-    setEditingBuildingIndex(null);
+  const handleAddPlaceSubmit = (e) => {
+    e.preventDefault();
+    if (!newPlaceData.name.trim()) return;
+    const newPlace = {
+      id: `place_${Date.now()}`,
+      ...newPlaceData
+    };
+    const updated = [...places, newPlace];
+    setPlaces(updated);
+    setBuildings(updated.map(p => p.name));
+    setShowAddPlaceModal(false);
+    setNewPlaceData({
+      name: '',
+      address: '',
+      type: 'School Facility',
+      leadTech: 'Support Team',
+      roomsCount: 25,
+      wings: 'Main Classrooms, Library, Cafeteria, Gymnasium'
+    });
     persistChanges(updated, areas);
   };
 
-  const handleDeleteBuilding = (index) => {
-    if (buildings.length <= 1) {
+  const handleDeletePlace = (placeId, placeName) => {
+    if (places.length <= 1) {
       alert('You must have at least one building.');
       return;
     }
-    const confirmDelete = window.confirm(`Remove "${buildings[index]}" from the building list?`);
+    const confirmDelete = window.confirm(`Remove "${placeName}" from Places and Buildings?`);
     if (!confirmDelete) return;
-    const updated = buildings.filter((_, i) => i !== index);
-    setBuildings(updated);
+    const updated = places.filter((p) => p.id !== placeId);
+    setPlaces(updated);
+    setBuildings(updated.map(p => p.name));
     persistChanges(updated, areas);
   };
 
@@ -128,7 +156,7 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
 
     setAreas(updatedAreas);
     setNewAssetText('');
-    persistChanges(buildings, updatedAreas);
+    persistChanges(places, updatedAreas);
   };
 
   const handleSaveAssetEdit = (assetId) => {
@@ -147,7 +175,7 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
 
     setAreas(updatedAreas);
     setEditingAssetId(null);
-    persistChanges(buildings, updatedAreas);
+    persistChanges(places, updatedAreas);
   };
 
   const handleDeleteAsset = (assetId) => {
@@ -166,7 +194,7 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
     });
 
     setAreas(updatedAreas);
-    persistChanges(buildings, updatedAreas);
+    persistChanges(places, updatedAreas);
   };
 
   // --- Department Pre-Defined Issue Handlers ---
@@ -177,7 +205,6 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
 
     const updatedAreas = areas.map((area) => {
       if (area.id !== activeTab) return area;
-      // Keep "Issue Not Listed" at the end if present
       const withoutNotListed = area.predefinedIssues.filter((iss) => iss !== 'Issue Not Listed');
       return {
         ...area,
@@ -187,7 +214,7 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
 
     setAreas(updatedAreas);
     setNewIssueText('');
-    persistChanges(buildings, updatedAreas);
+    persistChanges(places, updatedAreas);
   };
 
   const handleSaveIssueEdit = (index) => {
@@ -206,7 +233,7 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
 
     setAreas(updatedAreas);
     setEditingIssueIndex(null);
-    persistChanges(buildings, updatedAreas);
+    persistChanges(places, updatedAreas);
   };
 
   const handleDeleteIssue = (index) => {
@@ -226,15 +253,16 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
     });
 
     setAreas(updatedAreas);
-    persistChanges(buildings, updatedAreas);
+    persistChanges(places, updatedAreas);
   };
 
   const handleResetDefaults = () => {
-    const confirmReset = window.confirm("Reset all buildings, asset lists, and pre-defined issues to original defaults?");
+    const confirmReset = window.confirm("Reset all buildings, places, asset lists, and pre-defined issues to original defaults?");
     if (!confirmReset) return;
-    setBuildings(DEFAULT_BUILDINGS);
+    setPlaces(DEFAULT_PLACES);
+    setBuildings(DEFAULT_PLACES.map(p => p.name));
     setAreas(DEFAULT_AREAS);
-    persistChanges(DEFAULT_BUILDINGS, DEFAULT_AREAS);
+    persistChanges(DEFAULT_PLACES, DEFAULT_AREAS);
     showToast('Reset to original defaults.');
   };
 
@@ -254,7 +282,7 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
             </h1>
           </div>
           <p className="mt-1 text-sm text-slate-600">
-            Rename buildings, add or edit asset categories, and customize pre-defined issue choices.
+            Manage school campuses, physical addresses, asset categories, and pre-defined issue choices.
           </p>
         </div>
 
@@ -286,7 +314,7 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
           }`}
         >
           <Building2 className="w-4 h-4 text-amber-400" />
-          <span>Buildings & Locations ({buildings.length})</span>
+          <span>Buildings & Places ({places.length})</span>
         </button>
 
         <button
@@ -326,103 +354,73 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
         </button>
       </div>
 
-      {/* --- TAB 1: BUILDINGS & LOCATIONS --- */}
+      {/* --- TAB 1: BUILDINGS & PLACES --- */}
       {activeTab === 'buildings' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
-              <h3 className="text-lg font-bold text-slate-900">Campus Buildings & Facilities</h3>
+              <h3 className="text-lg font-bold text-slate-900">Campus Buildings & Locations</h3>
               <p className="text-xs text-slate-500">
-                These options appear in the "Building / Wing" dropdown on all ticket forms.
+                Configure district school campuses, physical addresses, lead technicians, and room zones.
               </p>
             </div>
 
-            {/* Add Building Form */}
-            <form onSubmit={handleAddBuilding} className="flex gap-2 w-full sm:w-auto">
-              <input
-                type="text"
-                placeholder="Add new building name..."
-                value={newBuildingText}
-                onChange={(e) => setNewBuildingText(e.target.value)}
-                className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm focus:ring-2 focus:ring-amber-500 w-full sm:w-64"
-              />
-              <button
-                type="submit"
-                disabled={!newBuildingText.trim()}
-                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs sm:text-sm transition-colors flex items-center gap-1.5 disabled:opacity-50"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add</span>
-              </button>
-            </form>
+            <button
+              onClick={() => setShowAddPlaceModal(true)}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs sm:text-sm transition-colors flex items-center gap-1.5 shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Add Campus / Building</span>
+            </button>
           </div>
 
-          {/* Buildings List */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {buildings.map((building, idx) => {
-              const isEditing = editingBuildingIndex === idx;
-
-              return (
-                <div
-                  key={idx}
-                  className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 flex items-center justify-between gap-2 group hover:border-slate-300 transition-all"
-                >
-                  {isEditing ? (
-                    <div className="flex items-center gap-2 flex-1">
-                      <input
-                        type="text"
-                        value={editBuildingText}
-                        onChange={(e) => setEditBuildingText(e.target.value)}
-                        className="px-2.5 py-1 text-xs rounded-lg border border-amber-400 bg-white flex-1 focus:ring-1 focus:ring-amber-500 font-medium"
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => handleSaveBuildingEdit(idx)}
-                        className="p-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors"
-                        title="Save"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setEditingBuildingIndex(null)}
-                        className="p-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition-colors"
-                        title="Cancel"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+          {/* Places & Buildings List */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {places.map((place) => (
+              <div
+                key={place.id}
+                className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-white hover:border-amber-300 transition-all space-y-2.5"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <Building2 className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                    <div>
+                      <h4 className="text-sm font-extrabold text-slate-900">{place.name}</h4>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-700 uppercase">
+                        {place.type || 'School Facility'}
+                      </span>
                     </div>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-2 truncate">
-                        <Building2 className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                        <span className="text-xs sm:text-sm font-semibold text-slate-800 truncate">
-                          {building}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => {
-                            setEditingBuildingIndex(idx);
-                            setEditBuildingText(building);
-                          }}
-                          className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-slate-200 rounded-lg transition-colors"
-                          title="Rename Building"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteBuilding(idx)}
-                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Delete Building"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </>
-                  )}
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setEditingPlace({ ...place })}
+                      className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-slate-200 rounded-lg transition-colors"
+                      title="Edit Campus Details"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDeletePlace(place.id, place.name)}
+                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Delete Campus"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-              );
-            })}
+
+                <div className="text-xs text-slate-600 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                  <span className="truncate font-medium">{place.address || 'Address not specified'}</span>
+                </div>
+
+                <div className="text-[11px] text-slate-500 flex items-center justify-between pt-2 border-t border-slate-150">
+                  <span>Lead: <strong className="text-slate-800">{place.leadTech || 'Support Team'}</strong></span>
+                  <span>{place.roomsCount || '25+'} Rooms/Areas</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -642,6 +640,210 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
                 );
               })}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL: EDIT PLACE IN CUSTOMIZER --- */}
+      {editingPlace && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 animate-fade-in space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-amber-600" />
+                <span>Edit Campus / Building</span>
+              </h3>
+              <button 
+                onClick={() => setEditingPlace(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePlaceEdit} className="space-y-4 text-xs sm:text-sm">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Campus / Building Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingPlace.name}
+                  onChange={(e) => setEditingPlace({ ...editingPlace, name: e.target.value })}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Physical Address
+                </label>
+                <input
+                  type="text"
+                  value={editingPlace.address || ''}
+                  onChange={(e) => setEditingPlace({ ...editingPlace, address: e.target.value })}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Facility Type
+                  </label>
+                  <input
+                    type="text"
+                    value={editingPlace.type || ''}
+                    onChange={(e) => setEditingPlace({ ...editingPlace, type: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Lead Tech / Contact
+                  </label>
+                  <input
+                    type="text"
+                    value={editingPlace.leadTech || ''}
+                    onChange={(e) => setEditingPlace({ ...editingPlace, leadTech: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Classrooms, Wings & Specialized Rooms
+                </label>
+                <textarea
+                  rows={2}
+                  value={editingPlace.wings || ''}
+                  onChange={(e) => setEditingPlace({ ...editingPlace, wings: e.target.value })}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingPlace(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-300 text-slate-600 font-bold hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold shadow-sm"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL: ADD PLACE IN CUSTOMIZER --- */}
+      {showAddPlaceModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 animate-fade-in space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Plus className="w-4 h-4 text-amber-600" />
+                <span>Add Campus / Building</span>
+              </h3>
+              <button 
+                onClick={() => setShowAddPlaceModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddPlaceSubmit} className="space-y-4 text-xs sm:text-sm">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Campus / Building Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newPlaceData.name}
+                  onChange={(e) => setNewPlaceData({ ...newPlaceData, name: e.target.value })}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500"
+                  placeholder="e.g. WCA South Elementary"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Physical Address
+                </label>
+                <input
+                  type="text"
+                  value={newPlaceData.address}
+                  onChange={(e) => setNewPlaceData({ ...newPlaceData, address: e.target.value })}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500"
+                  placeholder="e.g. Kensington, MN 56343"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Facility Type
+                  </label>
+                  <input
+                    type="text"
+                    value={newPlaceData.type}
+                    onChange={(e) => setNewPlaceData({ ...newPlaceData, type: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Lead Tech
+                  </label>
+                  <input
+                    type="text"
+                    value={newPlaceData.leadTech}
+                    onChange={(e) => setNewPlaceData({ ...newPlaceData, leadTech: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Classrooms, Wings & Specialized Rooms
+                </label>
+                <textarea
+                  rows={2}
+                  value={newPlaceData.wings}
+                  onChange={(e) => setNewPlaceData({ ...newPlaceData, wings: e.target.value })}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddPlaceModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-300 text-slate-600 font-bold hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold shadow-sm"
+                >
+                  Create Campus
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
