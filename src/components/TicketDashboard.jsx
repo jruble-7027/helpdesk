@@ -522,11 +522,12 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
         const matchNum = (t.ticketNumber || '').toLowerCase().includes(q);
         const matchTitle = (t.title || '').toLowerCase().includes(q);
         const matchDesc = (t.description || '').toLowerCase().includes(q);
-        const matchRoom = (t.roomLocation || '').toLowerCase().includes(q);
+        const matchRoom = (t.roomLocation || t.room || '').toLowerCase().includes(q);
+        const matchBuilding = (t.location || t.building || '').toLowerCase().includes(q);
         const matchUser = (t.createdByName || t.createdByEmail || '').toLowerCase().includes(q);
         const matchAsset = (t.assetType || t.assetTag || '').toLowerCase().includes(q);
         const matchAssignee = (t.assignedToName || t.assignedToEmail || '').toLowerCase().includes(q);
-        return matchNum || matchTitle || matchDesc || matchRoom || matchUser || matchAsset || matchAssignee;
+        return matchNum || matchTitle || matchDesc || matchRoom || matchBuilding || matchUser || matchAsset || matchAssignee;
       }
       return true;
     }).sort((a, b) => {
@@ -1102,8 +1103,8 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
                           <div className="text-xs font-bold text-slate-800 leading-tight truncate max-w-[110px]">
                             {ticket.createdByName || ticket.requester?.name || 'Requester'}
                           </div>
-                          <div className="text-[10px] text-slate-400 truncate max-w-[110px]">
-                            {ticket.building || 'Inbound'} • {ticket.roomLocation || 'General'}
+                          <div className="text-[10px] text-slate-500 font-medium truncate max-w-[130px]">
+                            {ticket.location || ticket.building || 'Inbound'} • {ticket.room || ticket.roomLocation || 'General'}
                           </div>
                         </div>
                         <div className="w-8 h-8 rounded-full bg-slate-800 text-amber-400 font-bold text-xs flex items-center justify-center flex-shrink-0 border border-slate-700 shadow-inner">
@@ -1255,8 +1256,20 @@ export default function TicketDashboard({ user, userProfile, filterByMyTickets =
               </div>
               <div className="flex justify-between py-1 border-b border-slate-100">
                 <span className="text-slate-500">Location:</span>
-                <span className="font-semibold">{selectedTicket.building} • {selectedTicket.roomLocation}</span>
+                <span className="font-semibold text-slate-800">{selectedTicket.location || selectedTicket.building}</span>
               </div>
+              <div className="flex justify-between py-1 border-b border-slate-100">
+                <span className="text-slate-500">Room / Facility:</span>
+                <span className="font-semibold text-slate-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                  {selectedTicket.room || selectedTicket.roomLocation}
+                </span>
+              </div>
+              {selectedTicket.locationAddress && (
+                <div className="flex justify-between py-1 border-b border-slate-100 text-[11px] text-slate-500">
+                  <span>Address:</span>
+                  <span className="text-slate-600">{selectedTicket.locationAddress}</span>
+                </div>
+              )}
               <div className="flex justify-between py-1 border-b border-slate-100">
                 <span className="text-slate-500">Asset / Category:</span>
                 <span className="font-semibold">{selectedTicket.assetType}</span>

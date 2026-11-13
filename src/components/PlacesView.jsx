@@ -27,7 +27,7 @@ export default function PlacesView({
 }) {
   const places = placesList && placesList.length > 0 ? placesList : DEFAULT_PLACES;
   const [search, setSearch] = useState('');
-  const [selectedPlaceId, setSelectedPlaceId] = useState(places[0]?.id || 'secondary');
+  const [selectedPlaceId, setSelectedPlaceId] = useState(places[0]?.id || 'centennial');
   
   // Edit & Add Modal State
   const [editingPlace, setEditingPlace] = useState(null); // object or null
@@ -334,7 +334,7 @@ export default function PlacesView({
                   value={editingPlace.name}
                   onChange={(e) => setEditingPlace({ ...editingPlace, name: e.target.value })}
                   className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500"
-                  placeholder="e.g. WCA Secondary School"
+                  placeholder="e.g. Centennial Campus"
                 />
               </div>
 
@@ -347,7 +347,7 @@ export default function PlacesView({
                   value={editingPlace.address}
                   onChange={(e) => setEditingPlace({ ...editingPlace, address: e.target.value })}
                   className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500"
-                  placeholder="e.g. 301 County Rd 11, Barrett, MN 56311"
+                  placeholder="e.g. 1917 N. Centennial St., High Point, NC 27262"
                 />
               </div>
 
@@ -440,7 +440,7 @@ export default function PlacesView({
                   value={newPlaceForm.name}
                   onChange={(e) => setNewPlaceForm({ ...newPlaceForm, name: e.target.value })}
                   className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500"
-                  placeholder="e.g. WCA South Elementary"
+                  placeholder="e.g. Sandy Ridge Campus"
                 />
               </div>
 
@@ -453,7 +453,7 @@ export default function PlacesView({
                   value={newPlaceForm.address}
                   onChange={(e) => setNewPlaceForm({ ...newPlaceForm, address: e.target.value })}
                   className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500"
-                  placeholder="e.g. Kensington, MN 56343"
+                  placeholder="e.g. 1946 Sandy Ridge Road, Colfax, NC 27235"
                 />
               </div>
 

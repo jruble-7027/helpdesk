@@ -16,13 +16,27 @@ import {
 import { URGENCY_LEVELS, BUILDINGS } from '../data/categoriesData';
 import { submitTicket } from '../services/firebase';
 
-export default function TicketSubmissionForm({ area, buildingsList, user, onBack, onTicketCreated }) {
-  const rawBuildings = buildingsList && buildingsList.length > 0 ? buildingsList : BUILDINGS;
-  const availableBuildings = rawBuildings.map((b) => (typeof b === 'string' ? b : b.name));
-  const [building, setBuilding] = useState(availableBuildings[0] || 'WCA Secondary School');
-  const [roomLocation, setRoomLocation] = useState('');
+export default function TicketSubmissionForm({ area, buildingsList, placesList, user, onBack, onTicketCreated }) {
+  const locations = placesList && placesList.length > 0 ? placesList : DEFAULT_PLACES;
+  const [selectedPlaceId, setSelectedPlaceId] = useState(locations[0]?.id || 'centennial');
+  
+  const currentPlace = locations.find((p) => p.id === selectedPlaceId) || locations[0];
+  const roomsForPlace = currentPlace?.rooms && currentPlace.rooms.length > 0
+    ? currentPlace.rooms
+    : ['Baseball Field', 'Gymnasium', 'Cafeteria / Dining Hall', 'Main Office', 'Media Center / Library', 'Room 101', 'Room 102', 'Room 103'];
+
+  const [selectedRoom, setSelectedRoom] = useState(roomsForPlace[0] || 'Baseball Field');
+  const [customRoom, setCustomRoom] = useState('');
   const [assetType, setAssetType] = useState(area.assetTypes[0]?.name || '');
   const [assetTag, setAssetTag] = useState('');
+
+  const handleLocationChange = (placeId) => {
+    setSelectedPlaceId(placeId);
+    const place = locations.find((p) => p.id === placeId) || locations[0];
+    const placeRooms = place?.rooms && place.rooms.length > 0 ? place.rooms : ['Baseball Field', 'Gymnasium', 'Main Office', 'Room 101'];
+    setSelectedRoom(placeRooms[0] || 'Room 101');
+    setCustomRoom('');
+  };
   
   // Issue selection
   const [selectedIssue, setSelectedIssue] = useState('');
@@ -76,8 +90,11 @@ export default function TicketSubmissionForm({ area, buildingsList, user, onBack
     e.preventDefault();
     setErrorMsg('');
 
-    if (!roomLocation.trim()) {
-      setErrorMsg('Please specify a room number or location.');
+    const isOtherRoom = selectedRoom === '__OTHER__';
+    const finalRoom = isOtherRoom ? customRoom.trim() : selectedRoom;
+
+    if (!finalRoom) {
+      setErrorMsg('Please select or specify a room number or facility.');
       return;
     }
 
@@ -105,8 +122,11 @@ export default function TicketSubmissionForm({ area, buildingsList, user, onBack
         ticketNumber,
         areaId: area.id,
         areaName: area.name,
-        building,
-        roomLocation: roomLocation.trim(),
+        location: currentPlace.name,
+        building: currentPlace.name, // backward compatibility
+        locationAddress: currentPlace.address || '',
+        room: finalRoom,
+        roomLocation: finalRoom, // backward compatibility
         assetType,
         assetTag: assetTag.trim() || 'N/A',
         selectedIssue,
@@ -154,8 +174,14 @@ export default function TicketSubmissionForm({ area, buildingsList, user, onBack
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">Location:</span>
-              <span className="font-semibold">{successTicket.building} • {successTicket.roomLocation}</span>
+              <span className="font-semibold">{successTicket.location || successTicket.building} • {successTicket.room || successTicket.roomLocation}</span>
             </div>
+            {successTicket.locationAddress && (
+              <div className="flex justify-between text-slate-500 text-[11px]">
+                <span>Address:</span>
+                <span className="text-slate-600">{successTicket.locationAddress}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-slate-500">Asset:</span>
               <span className="font-semibold">{successTicket.assetType}</span>
@@ -177,7 +203,8 @@ export default function TicketSubmissionForm({ area, buildingsList, user, onBack
                 setSelectedIssue('');
                 setCustomTitle('');
                 setDescription('');
-                setRoomLocation('');
+                setSelectedRoom(roomsForPlace[0] || 'Room 101');
+                setCustomRoom('');
                 setAssetTag('');
                 setFiles([]);
                 setFilePreviews([]);
@@ -240,62 +267,107 @@ export default function TicketSubmissionForm({ area, buildingsList, user, onBack
               <span>1. Location & Asset Info</span>
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-4">
+              {/* Field 1: Location */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Building / Wing <span className="text-red-500">*</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Location</span>
+                    <span className="text-red-500">*</span>
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-normal">
+                    Select Campus Location
+                  </span>
                 </label>
                 <select
-                  value={building}
-                  onChange={(e) => setBuilding(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white"
+                  value={selectedPlaceId}
+                  onChange={(e) => handleLocationChange(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white font-semibold text-slate-900 shadow-sm"
                 >
-                  {availableBuildings.map((b) => (
-                    <option key={b} value={b}>{b}</option>
+                  {locations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.name} — {loc.address}
+                    </option>
                   ))}
                 </select>
+                {currentPlace?.address && (
+                  <p className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1.5 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                    <MapPin className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                    <span><strong className="text-slate-800">{currentPlace.name}:</strong> {currentPlace.address}</span>
+                  </p>
+                )}
               </div>
 
+              {/* Field 2: Room # / Facility (Attached to the selected Location) */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Room # or Specific Location <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Room 204, East Hallway, Library"
-                  value={roomLocation}
-                  onChange={(e) => setRoomLocation(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Asset Category <span className="text-red-500">*</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Room # / Facility</span>
+                    <span className="text-red-500">*</span>
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-normal">
+                    {roomsForPlace.length} rooms & facilities at {currentPlace?.name}
+                  </span>
                 </label>
                 <select
-                  value={assetType}
-                  onChange={(e) => setAssetType(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white"
+                  value={selectedRoom}
+                  onChange={(e) => setSelectedRoom(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white font-medium text-slate-900 shadow-sm"
                 >
-                  {area.assetTypes.map((a) => (
-                    <option key={a.id} value={a.name}>{a.name}</option>
+                  {roomsForPlace.map((room) => (
+                    <option key={room} value={room}>
+                      {room}
+                    </option>
                   ))}
+                  <option value="__OTHER__">+ Other / Specific Room or Area (Type Below)...</option>
                 </select>
+
+                {selectedRoom === '__OTHER__' && (
+                  <div className="mt-2.5">
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Room 214B, Batting Cages, Press Box, Storage Closet"
+                      value={customRoom}
+                      onChange={(e) => setCustomRoom(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-amber-400 bg-amber-50/40 text-sm focus:ring-2 focus:ring-amber-500 text-slate-900 placeholder:text-slate-400 font-medium shadow-inner"
+                      autoFocus
+                    />
+                  </div>
+                )}
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Asset Tag / Barcode / Device ID <span className="text-slate-400 font-normal">(Optional)</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. #10452, Dell Serial, or N/A"
-                  value={assetTag}
-                  onChange={(e) => setAssetTag(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                />
+              {/* Asset Category & Tag */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Asset Category <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={assetType}
+                    onChange={(e) => setAssetType(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white font-medium"
+                  >
+                    {area.assetTypes.map((a) => (
+                      <option key={a.id} value={a.name}>{a.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Asset Tag / Barcode / Device ID <span className="text-slate-400 font-normal">(Optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. #10452, Dell Serial, or N/A"
+                    value={assetTag}
+                    onChange={(e) => setAssetTag(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 font-medium"
+                  />
+                </div>
               </div>
             </div>
           </div>

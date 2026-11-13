@@ -188,6 +188,7 @@ export default function App() {
               <TicketSubmissionForm 
                 area={catalog.areas?.find((a) => a.id === selectedArea.id) || selectedArea}
                 buildingsList={catalog.buildings}
+                placesList={catalog.places}
                 user={user}
                 onBack={handleBackToLanding}
                 onTicketCreated={handleTicketCreated}

@@ -131,13 +131,45 @@ export const subscribeToCatalog = (callback) => {
   return onSnapshot(catalogRef, async (docSnap) => {
     if (docSnap.exists()) {
       const data = docSnap.data();
-      // Ensure places is populated and in sync
-      if (!data.places || !Array.isArray(data.places) || data.places.length === 0) {
+      let needsPersist = false;
+
+      // Ensure places is populated with the correct 3 NC locations (Centennial, Sandy Ridge, Conrad)
+      const hasOldMinnesotaPlaces = data.places && Array.isArray(data.places) && data.places.some((p) => (p.address || '').includes('MN') || p.id === 'secondary');
+      
+      if (!data.places || !Array.isArray(data.places) || data.places.length === 0 || hasOldMinnesotaPlaces) {
         data.places = DEFAULT_PLACES;
+        needsPersist = true;
+      } else {
+        // Ensure every place has its rooms array populated
+        data.places = data.places.map((place) => {
+          const defaultMatch = DEFAULT_PLACES.find((dp) => dp.id === place.id || dp.name.toLowerCase() === place.name.toLowerCase());
+          if (!place.rooms || !Array.isArray(place.rooms) || place.rooms.length === 0) {
+            needsPersist = true;
+            return {
+              ...place,
+              rooms: defaultMatch?.rooms || [
+                'Main Office', 'Cafeteria', 'Gymnasium', 'Media Center / Library',
+                'Room 101', 'Room 102', 'Room 103', 'Room 104', 'Restrooms', 'Exterior / Grounds'
+              ]
+            };
+          }
+          return place;
+        });
       }
-      if (!data.buildings || data.buildings.length === 0) {
-        data.buildings = data.places.map((p) => p.name);
+
+      data.buildings = data.places.map((p) => p.name);
+
+      if (needsPersist) {
+        try {
+          await setDoc(catalogRef, {
+            ...data,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        } catch (e) {
+          console.warn("Could not auto-migrate catalog settings:", e);
+        }
       }
+
       callback(data);
     } else {
       // Auto-seed initial defaults into Firestore
