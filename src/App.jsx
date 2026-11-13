@@ -107,12 +107,19 @@ export default function App() {
           </div>
         )}
 
-        {/* View 2: Staff / Technician Queue Dashboard */}
+        {/* View 2: Ticket Queue Dashboard */}
         {currentView === 'dashboard' && (
           <TicketDashboard 
             user={user} 
             userProfile={userProfile}
             filterByMyTickets={false} 
+            onNewTicket={(areaId) => {
+              if (areaId && areaId !== 'all') {
+                const foundArea = catalog.areas?.find((a) => a.id === areaId);
+                if (foundArea) setSelectedArea(foundArea);
+              }
+              setCurrentView('submit');
+            }}
           />
         )}
 
