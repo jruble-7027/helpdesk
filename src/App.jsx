@@ -17,9 +17,30 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [currentView, setCurrentView] = useState('submit'); // 'submit' | 'dashboard' | 'my-tickets' | 'users' | 'customizer'
+  const [currentView, setCurrentView] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('ticket')) {
+        return 'dashboard';
+      }
+    }
+    return 'submit';
+  }); // 'submit' | 'dashboard' | 'my-tickets' | 'users' | 'customizer'
   const [selectedArea, setSelectedArea] = useState(null);
   const [catalog, setCatalog] = useState({ buildings: BUILDINGS, areas: AREAS, places: DEFAULT_PLACES });
+
+  // Listen for direct deep-link query parameter changes (e.g. ?ticket=T-1234 or doc ID)
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('ticket')) {
+        setCurrentView('dashboard');
+      }
+    };
+    handleUrlChange();
+    window.addEventListener('popstate', handleUrlChange);
+    return () => window.removeEventListener('popstate', handleUrlChange);
+  }, []);
 
   useEffect(() => {
     // Subscribe to dynamic fields/issues catalog

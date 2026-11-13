@@ -288,6 +288,22 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
       const match = tickets.find((t) => t.id === ticketParam || t.ticketNumber === ticketParam);
       if (match) {
         setSelectedTicket(match);
+        // Ensure filters do not hide the ticket in the queue list
+        if (match.areaId) {
+          setSelectedArea(match.areaId);
+        } else {
+          setSelectedArea('all');
+        }
+        setKpiFilter('all');
+        setSelectedStatus('all');
+
+        // Smooth scroll to ticket detail panel on mobile / desktop viewports
+        setTimeout(() => {
+          const detailEl = document.getElementById('ticket-detail-panel');
+          if (detailEl) {
+            detailEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }, 300);
       }
     }
   }, [tickets]);
@@ -1320,7 +1336,7 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
 
         {/* Right Column: Ticket Detail Drawer OR Live Activity & Notifications Feed */}
         {selectedTicket ? (
-          <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-lg p-6 space-y-6 sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
+          <div id="ticket-detail-panel" className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-lg p-6 space-y-6 sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
             <div className="flex items-start justify-between border-b border-slate-100 pb-3">
               <div>
                 <span className="font-mono text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
