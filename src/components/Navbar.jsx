@@ -66,19 +66,17 @@ export default function Navbar({
             </button>
 
             {/* My Tickets */}
-            {user && (
-              <button
-                onClick={() => setCurrentView('my-tickets')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold tracking-wide transition-all whitespace-nowrap ${
-                  currentView === 'my-tickets'
-                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 ring-1 ring-amber-400 font-black'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
-                }`}
-              >
-                <UserIcon className="w-4 h-4" />
-                <span>My Tickets</span>
-              </button>
-            )}
+            <button
+              onClick={() => setCurrentView('my-tickets')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold tracking-wide transition-all whitespace-nowrap ${
+                currentView === 'my-tickets'
+                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 ring-1 ring-amber-400 font-black'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+              }`}
+            >
+              <UserIcon className="w-4 h-4" />
+              <span>My Tickets</span>
+            </button>
 
             {/* Ticket Queue */}
             {isStaffOrTech && (
@@ -188,19 +186,17 @@ export default function Navbar({
             <span>Submit Ticket</span>
           </button>
 
-          {user && (
-            <button
-              onClick={() => setCurrentView('my-tickets')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${
-                currentView === 'my-tickets'
-                  ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
-              }`}
-            >
-              <UserIcon className="w-3.5 h-3.5" />
-              <span>My Tickets</span>
-            </button>
-          )}
+          <button
+            onClick={() => setCurrentView('my-tickets')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${
+              currentView === 'my-tickets'
+                ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
+                : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+            }`}
+          >
+            <UserIcon className="w-3.5 h-3.5" />
+            <span>My Tickets</span>
+          </button>
 
           {isStaffOrTech && (
             <button

@@ -64,7 +64,8 @@ import {
   subscribeToStaffMembers, 
   assignTicket,
   addTicketComment,
-  updateTicketStatus
+  updateTicketStatus,
+  signInWithGoogle
 } from '../services/firebase';
 import { canModifyTicket, canCloseTicket, ROLES } from '../data/rolesData';
 
@@ -222,7 +223,7 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
 
   // Staff & Technician Assignment state
   const [staffMembers, setStaffMembers] = useState([]);
-  const [myTicketsSubTab, setMyTicketsSubTab] = useState(role !== 'requester' ? 'assigned' : 'submitted');
+  const [myTicketsSubTab, setMyTicketsSubTab] = useState('all');
 
   // Incident IQ Comment Composer & Notification State
   const [commentText, setCommentText] = useState('');
@@ -508,13 +509,20 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
   const canModify = (ticketAreaId) => canModifyTicket(role, ticketAreaId);
   const canClose = (ticketAreaId) => canCloseTicket(role, ticketAreaId);
 
-  const userEmailLower = (user?.email || '').toLowerCase();
+  const userEmailLower = (user?.email || '').toLowerCase().trim();
+  const userUid = user?.uid;
 
   // Counts for My Tickets subtabs
-  const assignedToMeCount = tickets.filter((t) => (t.assignedToEmail || '').toLowerCase() === userEmailLower).length;
+  const assignedToMeCount = tickets.filter((t) => {
+    const assignedEmail = (t.assignedToEmail || '').toLowerCase().trim();
+    const assignedUid = t.assignedToUid || t.assignedTo?.uid;
+    return (userEmailLower && assignedEmail === userEmailLower) || (userUid && assignedUid === userUid);
+  }).length;
+
   const submittedByMeCount = tickets.filter((t) => {
-    const creator = (t.createdByEmail || t.requester?.email || '').toLowerCase();
-    return creator === userEmailLower;
+    const creatorEmail = (t.createdByEmail || t.requester?.email || '').toLowerCase().trim();
+    const creatorUid = t.createdById || t.userId || t.requester?.uid;
+    return (userEmailLower && creatorEmail === userEmailLower) || (userUid && creatorUid === userUid);
   }).length;
 
   // Department counts
@@ -613,10 +621,16 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
   // Filter tickets for main list
   const filteredTickets = useMemo(() => {
     return tickets.filter((t) => {
-      if (filterByMyTickets && userEmailLower) {
-        const ticketEmail = (t.createdByEmail || t.requester?.email || '').toLowerCase();
-        const isSubmitted = ticketEmail === userEmailLower;
-        const isAssigned = (t.assignedToEmail || '').toLowerCase() === userEmailLower;
+      if (filterByMyTickets) {
+        if (!user) return false;
+
+        const ticketEmail = (t.createdByEmail || t.requester?.email || '').toLowerCase().trim();
+        const creatorUid = t.createdById || t.userId || t.requester?.uid;
+        const isSubmitted = (userEmailLower && ticketEmail === userEmailLower) || (userUid && creatorUid === userUid);
+
+        const assignedEmail = (t.assignedToEmail || '').toLowerCase().trim();
+        const assignedUid = t.assignedToUid || t.assignedTo?.uid;
+        const isAssigned = (userEmailLower && assignedEmail === userEmailLower) || (userUid && assignedUid === userUid);
 
         if (role !== 'requester') {
           if (myTicketsSubTab === 'assigned' && !isAssigned) return false;
@@ -627,9 +641,12 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
         }
       }
 
-      const ticketArea = t.areaId || t.department;
-      if (selectedArea !== 'all' && ticketArea !== selectedArea) {
-        return false;
+      // Department filter is ONLY applied in normal Ticket Queue view, NOT in My Tickets
+      if (!filterByMyTickets) {
+        const ticketArea = t.areaId || t.department;
+        if (selectedArea !== 'all' && ticketArea !== selectedArea) {
+          return false;
+        }
       }
 
       if (selectedStatus !== 'all' && t.status !== selectedStatus) {
@@ -686,7 +703,7 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
       const dateB = new Date(b.createdAt?.toDate ? b.createdAt.toDate() : b.createdAt || 0).getTime();
       return dateB - dateA;
     });
-  }, [tickets, filterByMyTickets, userEmailLower, role, myTicketsSubTab, selectedArea, selectedStatus, kpiFilter, priorityFilter, searchQuery]);
+  }, [tickets, filterByMyTickets, user, userEmailLower, userUid, role, myTicketsSubTab, selectedArea, selectedStatus, kpiFilter, priorityFilter, searchQuery]);
 
   const handleToggleKpiFilter = (filterType) => {
     if (kpiFilter === filterType && priorityFilter === 'all') {
@@ -1017,13 +1034,23 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
 
           {/* Sub-tabs for Staff / Technicians */}
           {role !== 'requester' && (
-            <div className="inline-flex rounded-xl bg-slate-200/80 p-1 border border-slate-300 self-start sm:self-auto">
+            <div className="inline-flex rounded-xl bg-slate-200/80 p-1 border border-slate-300 self-start sm:self-auto shadow-inner">
+              <button
+                onClick={() => setMyTicketsSubTab('all')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  myTicketsSubTab === 'all'
+                    ? 'bg-amber-500 text-slate-950 font-black shadow-sm ring-1 ring-amber-400'
+                    : 'text-slate-700 hover:text-slate-950 hover:bg-white/50'
+                }`}
+              >
+                All Tickets ({assignedToMeCount + submittedByMeCount})
+              </button>
               <button
                 onClick={() => setMyTicketsSubTab('assigned')}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
                   myTicketsSubTab === 'assigned'
-                    ? 'bg-amber-500 text-slate-950 shadow-sm'
-                    : 'text-slate-700 hover:text-slate-950'
+                    ? 'bg-amber-500 text-slate-950 font-black shadow-sm ring-1 ring-amber-400'
+                    : 'text-slate-700 hover:text-slate-950 hover:bg-white/50'
                 }`}
               >
                 <UserCheck className="w-3.5 h-3.5" />
@@ -1033,22 +1060,12 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
                 onClick={() => setMyTicketsSubTab('submitted')}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
                   myTicketsSubTab === 'submitted'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-700 hover:text-slate-950'
+                    ? 'bg-amber-500 text-slate-950 font-black shadow-sm ring-1 ring-amber-400'
+                    : 'text-slate-700 hover:text-slate-950 hover:bg-white/50'
                 }`}
               >
                 <User className="w-3.5 h-3.5" />
                 <span>Submitted by Me ({submittedByMeCount})</span>
-              </button>
-              <button
-                onClick={() => setMyTicketsSubTab('all')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  myTicketsSubTab === 'all'
-                    ? 'bg-slate-900 text-white shadow-sm'
-                    : 'text-slate-700 hover:text-slate-950'
-                }`}
-              >
-                All ({assignedToMeCount + submittedByMeCount})
               </button>
             </div>
           )}
@@ -1143,7 +1160,26 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Ticket List (Left Column) */}
         <div className={selectedTicket ? 'lg:col-span-7 space-y-3' : 'lg:col-span-8 space-y-3'}>
-          {loading ? (
+          {filterByMyTickets && !user ? (
+            <div className="bg-white rounded-2xl p-10 text-center border border-slate-200 shadow-sm space-y-4">
+              <div className="w-14 h-14 bg-amber-100 text-amber-700 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+                <User className="w-7 h-7" />
+              </div>
+              <div className="max-w-md mx-auto">
+                <h3 className="text-lg font-black text-slate-900">Sign in to View Your Tickets</h3>
+                <p className="text-sm text-slate-600 mt-1">
+                  Please sign in with your West Central Area Schools Google account to track your submitted requests and assigned tickets.
+                </p>
+              </div>
+              <button
+                onClick={() => signInWithGoogle().catch((err) => console.error(err))}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-sm font-black rounded-xl shadow-md transition-all cursor-pointer"
+              >
+                <User className="w-4 h-4" />
+                <span>Sign In with Google</span>
+              </button>
+            </div>
+          ) : loading ? (
             <div className="bg-white rounded-2xl p-12 text-center border border-slate-200">
               <div className="w-8 h-8 border-3 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
               <p className="text-sm text-slate-500">Loading support queue...</p>
@@ -1151,11 +1187,28 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
           ) : filteredTickets.length === 0 ? (
             <div className="bg-white rounded-2xl p-12 text-center border border-slate-200">
               <CheckCircle2 className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-              <h3 className="text-base font-bold text-slate-800">No Tickets Found</h3>
+              <h3 className="text-base font-bold text-slate-800">
+                {filterByMyTickets ? 'No Tickets Found for Your Account' : 'No Tickets Found'}
+              </h3>
               <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                There are no tickets matching your current department or priority filters.
+                {filterByMyTickets
+                  ? myTicketsSubTab === 'assigned'
+                    ? 'You currently have no tickets assigned to you.'
+                    : myTicketsSubTab === 'submitted'
+                    ? "You haven't submitted any tickets yet."
+                    : 'You have no tickets submitted by or assigned to your account.'
+                  : 'There are no tickets matching your current department or priority filters.'}
               </p>
-              {(kpiFilter !== 'all' || priorityFilter !== 'all' || selectedStatus !== 'all' || searchQuery) && (
+              {filterByMyTickets && onNewTicket && (
+                <button
+                  onClick={onNewTicket}
+                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black rounded-xl shadow-sm transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Submit a New Ticket</span>
+                </button>
+              )}
+              {!filterByMyTickets && (kpiFilter !== 'all' || priorityFilter !== 'all' || selectedStatus !== 'all' || searchQuery) && (
                 <button
                   onClick={() => {
                     setKpiFilter('all');
