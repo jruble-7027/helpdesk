@@ -540,6 +540,17 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
     }
   };
 
+  const handlePrintTicket = (ticket = selectedTicket) => {
+    const target = ticket || selectedTicket;
+    if (!target) return;
+    if (!selectedTicket || selectedTicket.id !== target.id) {
+      setSelectedTicket(target);
+    }
+    setTimeout(() => {
+      window.print();
+    }, 150);
+  };
+
   // Permission checkers
   const canModify = (ticketAreaId) => canModifyTicket(role, ticketAreaId);
   const canClose = (ticketAreaId) => canCloseTicket(role, ticketAreaId);
@@ -1323,7 +1334,7 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
                     </div>
 
                     {/* Right: Priority Score Pill & Requester Info */}
-                    <div className="flex items-center gap-3 flex-shrink-0">
+                    <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
                       {/* Priority Pill */}
                       <div className="text-center">
                         <span className={`inline-block font-mono text-xs font-extrabold px-2.5 py-1 rounded-lg ${priorityMeta.pillBg} shadow-sm`} title={`Priority: ${priorityMeta.label}`}>
@@ -1345,6 +1356,19 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
                           {getInitials(ticket.createdByName || ticket.requester?.name || ticket.createdByEmail)}
                         </div>
                       </div>
+
+                      {/* Quick Print Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePrintTicket(ticket);
+                        }}
+                        title="Print Work Order / Ticket"
+                        className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                      >
+                        <Printer className="w-4 h-4 text-slate-500 hover:text-amber-600" />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1431,6 +1455,15 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintTicket(selectedTicket)}
+                    title="Print Work Order / Ticket Summary"
+                    className="px-2.5 py-1.5 text-slate-200 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors flex items-center gap-1.5 font-bold text-xs"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Print</span>
+                  </button>
                   {role === 'admin' && (
                     <button
                       onClick={handleDeleteSelectedTicket}
@@ -1458,10 +1491,21 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
                   <h3 className="text-2xl font-extrabold text-slate-900 leading-tight">
                     {selectedTicket.title}
                   </h3>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-2">
-                    <span>Submitted by <strong className="text-slate-700">{selectedTicket.createdByName || selectedTicket.requester?.name || selectedTicket.createdByEmail}</strong></span>
-                    <span>•</span>
-                    <span>{formatRelativeTime(selectedTicket.createdAt)}</span>
+                  <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <span>Submitted by <strong className="text-slate-700">{selectedTicket.createdByName || selectedTicket.requester?.name || selectedTicket.createdByEmail}</strong></span>
+                      <span>•</span>
+                      <span>{formatRelativeTime(selectedTicket.createdAt)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handlePrintTicket(selectedTicket)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200 rounded-lg text-xs font-bold transition-colors"
+                      title="Print this Ticket / Work Order"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Print Work Order</span>
+                    </button>
                   </div>
                 </div>
 
@@ -2061,6 +2105,180 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  )}
+
+  {/* --- PRINTABLE TICKET WORK ORDER (Hidden on screen, rendered exclusively when printing) --- */}
+  {selectedTicket && (
+    <div id="printable-ticket-content" className="hidden print:block font-sans text-slate-900 bg-white">
+      {/* Header */}
+      <div className="border-b-2 border-slate-900 pb-4 mb-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="text-xl font-black uppercase tracking-tight text-slate-950">
+              Wesleyan Christian Academy
+            </div>
+            <div className="text-sm font-bold text-slate-600">
+              Service & Maintenance Helpdesk • Official Work Order Record
+            </div>
+            <div className="text-xs text-slate-500 mt-1">
+              Printed on {new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-2xl font-mono font-black text-slate-900">
+              {selectedTicket.ticketNumber || (selectedTicket.id ? `TICK-${selectedTicket.id.slice(-6)}` : 'TICK')}
+            </div>
+            <div className="inline-block mt-1 px-2.5 py-0.5 border border-slate-900 font-extrabold uppercase text-xs tracking-wider">
+              Status: {STATUS_CONFIG[selectedTicket.status]?.label || selectedTicket.status}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Ticket Title */}
+      <div className="mb-5">
+        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+          Issue / Work Order Title
+        </div>
+        <div className="text-xl font-extrabold text-slate-900 border-b border-slate-200 pb-2">
+          {selectedTicket.title}
+        </div>
+      </div>
+
+      {/* Structured Data Grid */}
+      <div className="grid grid-cols-2 gap-3.5 mb-6 text-xs border border-slate-300 rounded p-4 bg-slate-50/50 print-avoid-break">
+        <div>
+          <div className="font-bold text-slate-500 uppercase text-[10px]">Department</div>
+          <div className="text-sm font-bold text-slate-900">{selectedTicket.area || selectedTicket.areaName || selectedTicket.areaId}</div>
+        </div>
+        <div>
+          <div className="font-bold text-slate-500 uppercase text-[10px]">Priority / Urgency</div>
+          <div className="text-sm font-bold text-slate-900 uppercase">{selectedTicket.urgency || 'Normal'}</div>
+        </div>
+        <div>
+          <div className="font-bold text-slate-500 uppercase text-[10px]">Campus / Building</div>
+          <div className="text-sm font-semibold text-slate-900">{selectedTicket.location || selectedTicket.building || 'General'}</div>
+        </div>
+        <div>
+          <div className="font-bold text-slate-500 uppercase text-[10px]">Room / Facility Location</div>
+          <div className="text-sm font-semibold text-slate-900">{selectedTicket.room || selectedTicket.roomLocation || 'General / Unspecified'}</div>
+        </div>
+        <div>
+          <div className="font-bold text-slate-500 uppercase text-[10px]">Asset Category / Problem Type</div>
+          <div className="text-sm font-semibold text-slate-900">{selectedTicket.assetType} &gt; {selectedTicket.selectedIssue || 'Standard'}</div>
+        </div>
+        <div>
+          <div className="font-bold text-slate-500 uppercase text-[10px]">Asset Tag / Serial #</div>
+          <div className="text-sm font-mono font-semibold text-slate-900">{selectedTicket.assetTag && selectedTicket.assetTag !== 'N/A' ? selectedTicket.assetTag : 'None / N/A'}</div>
+        </div>
+        <div>
+          <div className="font-bold text-slate-500 uppercase text-[10px]">Submitted By (Requester)</div>
+          <div className="text-sm font-semibold text-slate-900">
+            {selectedTicket.createdByName || selectedTicket.requester?.name || selectedTicket.createdByEmail}
+          </div>
+          <div className="text-slate-600 text-[11px]">{selectedTicket.createdByEmail || selectedTicket.requester?.email}</div>
+        </div>
+        <div>
+          <div className="font-bold text-slate-500 uppercase text-[10px]">Assigned Technician</div>
+          <div className="text-sm font-semibold text-slate-900">
+            {selectedTicket.assignedToName || 'Unassigned / General Queue'}
+          </div>
+          {selectedTicket.assignedToEmail && (
+            <div className="text-slate-600 text-[11px]">{selectedTicket.assignedToEmail}</div>
+          )}
+        </div>
+        <div>
+          <div className="font-bold text-slate-500 uppercase text-[10px]">Date Submitted</div>
+          <div className="text-sm font-semibold text-slate-900">
+            {selectedTicket.createdAt?.toDate ? selectedTicket.createdAt.toDate().toLocaleString() : String(selectedTicket.createdAt || 'N/A')}
+          </div>
+        </div>
+        <div>
+          <div className="font-bold text-slate-500 uppercase text-[10px]">Last Status Update</div>
+          <div className="text-sm font-semibold text-slate-900">
+            {selectedTicket.updatedAt?.toDate ? selectedTicket.updatedAt.toDate().toLocaleString() : String(selectedTicket.updatedAt || 'N/A')}
+          </div>
+        </div>
+      </div>
+
+      {/* Full Description */}
+      <div className="mb-6 print-avoid-break">
+        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5 border-b border-slate-300 pb-1">
+          Detailed Description & Request Details
+        </div>
+        <div className="p-3.5 border border-slate-300 rounded text-xs leading-relaxed whitespace-pre-wrap font-mono text-slate-800 bg-white">
+          {selectedTicket.description}
+        </div>
+      </div>
+
+      {/* Activity / Comments Thread */}
+      {selectedTicket.comments && selectedTicket.comments.length > 0 && (
+        <div className="mb-6 print-avoid-break">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-2 border-b border-slate-300 pb-1">
+            Technician Notes & Conversation Log ({selectedTicket.comments.length})
+          </div>
+          <div className="space-y-2 text-xs">
+            {selectedTicket.comments.map((c, i) => (
+              <div key={i} className="p-2.5 border border-slate-200 rounded bg-slate-50/50">
+                <div className="flex justify-between text-[11px] font-bold text-slate-700 mb-1">
+                  <span>{c.authorName || c.authorEmail} {c.isInternal ? '[INTERNAL TECH NOTE]' : ''}</span>
+                  <span className="font-normal text-slate-500">{c.timestamp ? new Date(c.timestamp).toLocaleString() : ''}</span>
+                </div>
+                <div className="text-slate-800 whitespace-pre-wrap">{c.text}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Work Order Completion & Sign-Off Section */}
+      <div className="border-2 border-slate-800 rounded p-4 mb-6 print-avoid-break">
+        <div className="text-xs font-black uppercase tracking-wider text-slate-900 mb-3 border-b border-slate-400 pb-1 flex justify-between items-center">
+          <span>Technician Work Order Completion & Sign-Off</span>
+          <span className="text-[10px] font-normal text-slate-500">For physical work orders & maintenance audits</span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-y-4 gap-x-6 text-xs">
+          <div>
+            <span className="text-slate-600">Work Completed By:</span>
+            <div className="mt-4 border-b border-slate-400" />
+          </div>
+          <div>
+            <span className="text-slate-600">Date & Time Completed:</span>
+            <div className="mt-4 border-b border-slate-400" />
+          </div>
+
+          <div className="col-span-2">
+            <span className="text-slate-600">Resolution / Work Performed Summary:</span>
+            <div className="mt-6 border-b border-slate-300" />
+            <div className="mt-6 border-b border-slate-300" />
+          </div>
+
+          <div>
+            <span className="text-slate-600">Parts / Materials Consumed:</span>
+            <div className="mt-4 border-b border-slate-400" />
+          </div>
+          <div>
+            <span className="text-slate-600">Total Hours Billed / Logged:</span>
+            <div className="mt-4 border-b border-slate-400" />
+          </div>
+
+          <div>
+            <span className="text-slate-600">Technician Signature:</span>
+            <div className="mt-5 border-b border-slate-400" />
+          </div>
+          <div>
+            <span className="text-slate-600">Requester / Supervisor Sign-off:</span>
+            <div className="mt-5 border-b border-slate-400" />
+          </div>
+        </div>
+      </div>
+
+      {/* Footer Note */}
+      <div className="text-center text-[10px] text-slate-400 border-t border-slate-200 pt-3">
+        Wesleyan Christian Academy Helpdesk • https://wca-tickets-58f6c.web.app • Ticket #{selectedTicket.ticketNumber || selectedTicket.id}
       </div>
     </div>
   )}
