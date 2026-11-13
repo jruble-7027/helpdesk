@@ -451,6 +451,39 @@ export const updateTicketStatus = async ({
   return statusEntry;
 };
 
+// Update ticket maintenance logistics (PO #, Cost, Parts Used, IT Loaner Tag, Supplies Needed)
+export const updateTicketLogistics = async (ticketId, logisticsData = {}, user = null) => {
+  if (!ticketId) return null;
+  const ticketRef = doc(db, 'tickets', ticketId);
+  const actorName = user?.displayName || user?.email || 'Technician';
+
+  const summaryParts = [];
+  if (logisticsData.poNumber) summaryParts.push(`PO: ${logisticsData.poNumber}`);
+  if (logisticsData.estimatedCost) summaryParts.push(`Cost: $${logisticsData.estimatedCost}`);
+  if (logisticsData.partsUsed) summaryParts.push(`Parts: ${logisticsData.partsUsed}`);
+  if (logisticsData.loanerTag) {
+    summaryParts.push(`Loaner: ${logisticsData.loanerTag}${logisticsData.loanerReturned ? ' (Returned)' : ' (Checked Out)'}`);
+  }
+
+  const updatePayload = {
+    ...logisticsData,
+    updatedAt: serverTimestamp()
+  };
+
+  if (summaryParts.length > 0) {
+    updatePayload.statusHistory = arrayUnion({
+      status: 'logistics_update',
+      timestamp: new Date().toISOString(),
+      updatedBy: actorName,
+      note: `Updated logistics — ${summaryParts.join(' • ')}`
+    });
+  }
+
+  await updateDoc(ticketRef, updatePayload);
+  return updatePayload;
+};
+
+
 // ============================================================================
 // FLEET & DEVICE INVENTORY + LENOVO LIVE WARRANTY LOOKUP
 // ============================================================================

@@ -28,26 +28,45 @@ export default function App() {
     return 'submit';
   }); // 'submit' | 'dashboard' | 'my-tickets' | 'users' | 'customizer'
   const [selectedArea, setSelectedArea] = useState(null);
+  const [qrPrefill, setQrPrefill] = useState(null);
   const [catalog, setCatalog] = useState({ buildings: BUILDINGS, areas: AREAS, places: DEFAULT_PLACES });
 
-  // Listen for direct deep-link query parameter changes (e.g. ?ticket=T-1234 or doc ID)
+  // Listen for direct deep-link query parameter changes (e.g. ?ticket=T-1234 or QR room sticker ?area=housekeeping&campus=centennial&room=Gymnasium)
   useEffect(() => {
     const handleUrlChange = () => {
       const params = new URLSearchParams(window.location.search);
       if (params.get('ticket')) {
         setCurrentView('dashboard');
+        return;
+      }
+      const areaParam = params.get('area');
+      if (areaParam) {
+        const areaList = catalog.areas || AREAS;
+        const foundArea = areaList.find((a) => a.id.toLowerCase() === areaParam.toLowerCase());
+        if (foundArea) {
+          setSelectedArea(foundArea);
+          setQrPrefill({
+            campus: params.get('campus') || params.get('location') || '',
+            room: params.get('room') || '',
+            asset: params.get('asset') || '',
+            tag: params.get('tag') || '',
+            issue: params.get('issue') || ''
+          });
+          setCurrentView('submit');
+        }
       }
     };
     handleUrlChange();
     window.addEventListener('popstate', handleUrlChange);
     return () => window.removeEventListener('popstate', handleUrlChange);
-  }, []);
+  }, [catalog.areas]);
 
   useEffect(() => {
     // Subscribe to dynamic fields/issues catalog
     const unsubscribeCatalog = subscribeToCatalog((catData) => {
       if (catData) {
         setCatalog({
+          ...catData,
           places: catData.places || DEFAULT_PLACES,
           buildings: catData.buildings || (catData.places ? catData.places.map((p) => p.name) : BUILDINGS),
           areas: catData.areas || AREAS
@@ -96,6 +115,10 @@ export default function App() {
 
   const handleBackToLanding = () => {
     setSelectedArea(null);
+    setQrPrefill(null);
+    if (window.location.search) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   };
 
   const handleTicketCreated = () => {
@@ -105,12 +128,14 @@ export default function App() {
   const handleReportIssueFromAsset = (assetName) => {
     const itsmArea = catalog.areas?.find((a) => a.id === 'itsm') || catalog.areas?.[0];
     setSelectedArea(itsmArea);
+    setQrPrefill({ tag: assetName || '', asset: 'Laptop / Chromebook / Workstation' });
     setCurrentView('submit');
   };
 
   const handleRequestPart = (partName) => {
     const facilitiesArea = catalog.areas?.find((a) => a.id === 'facilities') || catalog.areas?.[0];
     setSelectedArea(facilitiesArea);
+    setQrPrefill({ issue: partName ? `Part Request: ${partName}` : '' });
     setCurrentView('submit');
   };
 
@@ -190,6 +215,7 @@ export default function App() {
             user={user} 
             userProfile={userProfile}
             catalog={catalog}
+            onCatalogUpdate={(updated) => setCatalog(updated)}
             filterByMyTickets={false} 
             onNewTicket={(areaId) => {
               if (areaId && areaId !== 'all') {
@@ -215,6 +241,7 @@ export default function App() {
                 buildingsList={catalog.buildings}
                 placesList={catalog.places}
                 user={user}
+                qrPrefill={qrPrefill}
                 onBack={handleBackToLanding}
                 onTicketCreated={handleTicketCreated}
               />

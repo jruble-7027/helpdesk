@@ -13,12 +13,25 @@ import {
   Tag, 
   AlertTriangle,
   FileText,
-  RefreshCw
+  RefreshCw,
+  QrCode,
+  Sparkles
 } from 'lucide-react';
 import { URGENCY_LEVELS, BUILDINGS, DEFAULT_PLACES } from '../data/categoriesData';
 import { submitTicket } from '../services/firebase';
 
-export default function TicketSubmissionForm({ area, buildingsList, placesList, user, onBack, onTicketCreated }) {
+const HOUSEKEEPING_SUPPLY_OPTIONS = [
+  '🧻 Toilet Paper',
+  '📄 Paper Towels',
+  '🧼 Hand Soap',
+  '🧴 Hand Sanitizer',
+  '🗑️ Trash Liners',
+  '🧽 Disinfectant Wipes',
+  '🧹 Mop / Vacuum',
+  '✨ Air Freshener'
+];
+
+export default function TicketSubmissionForm({ area, buildingsList, placesList, user, qrPrefill = null, onBack, onTicketCreated }) {
   const locations = placesList && placesList.length > 0 ? placesList : DEFAULT_PLACES;
   const [selectedPlaceId, setSelectedPlaceId] = useState(locations[0]?.id || 'centennial');
   
@@ -31,6 +44,7 @@ export default function TicketSubmissionForm({ area, buildingsList, placesList, 
   const [customRoom, setCustomRoom] = useState('');
   const [assetType, setAssetType] = useState(area.assetTypes[0]?.name || '');
   const [assetTag, setAssetTag] = useState('');
+  const [suppliesNeeded, setSuppliesNeeded] = useState([]);
 
   const handleLocationChange = (placeId) => {
     setSelectedPlaceId(placeId);
@@ -45,6 +59,69 @@ export default function TicketSubmissionForm({ area, buildingsList, placesList, 
   const [customTitle, setCustomTitle] = useState('');
   const [description, setDescription] = useState('');
   const [urgency, setUrgency] = useState('medium');
+
+  // Apply QR / URL deep-link pre-fill when present
+  useEffect(() => {
+    if (!qrPrefill) return;
+    let targetPlace = currentPlace;
+    if (qrPrefill.campus) {
+      const qLower = qrPrefill.campus.toLowerCase();
+      const matchedPlace = locations.find(
+        (p) => p.id.toLowerCase() === qLower || p.name.toLowerCase().includes(qLower)
+      );
+      if (matchedPlace) {
+        setSelectedPlaceId(matchedPlace.id);
+        targetPlace = matchedPlace;
+      }
+    }
+    if (qrPrefill.room) {
+      const pRooms = targetPlace?.rooms || roomsForPlace;
+      const exactMatch = pRooms.find((r) => r.toLowerCase() === qrPrefill.room.toLowerCase());
+      if (exactMatch) {
+        setSelectedRoom(exactMatch);
+        setCustomRoom('');
+      } else {
+        setSelectedRoom('__OTHER__');
+        setCustomRoom(qrPrefill.room);
+      }
+    }
+    if (qrPrefill.asset) {
+      const matchedAsset = area.assetTypes.find(
+        (a) => a.name.toLowerCase().includes(qrPrefill.asset.toLowerCase()) || a.id.toLowerCase() === qrPrefill.asset.toLowerCase()
+      );
+      if (matchedAsset) setAssetType(matchedAsset.name);
+    }
+    if (qrPrefill.tag) {
+      setAssetTag(qrPrefill.tag);
+    }
+    if (qrPrefill.issue) {
+      const matchedIssue = area.predefinedIssues.find(
+        (iss) => iss.toLowerCase() === qrPrefill.issue.toLowerCase()
+      );
+      if (matchedIssue) {
+        setSelectedIssue(matchedIssue);
+        setCustomTitle(matchedIssue);
+      } else {
+        setSelectedIssue('Issue Not Listed');
+        setCustomTitle(qrPrefill.issue);
+      }
+    }
+  }, [qrPrefill, area.id]);
+
+  const toggleSupplyItem = (item) => {
+    setSuppliesNeeded((prev) => {
+      const exists = prev.includes(item);
+      const next = exists ? prev.filter((x) => x !== item) : [...prev, item];
+      if (!selectedIssue && next.length > 0) {
+        const restockIssue = area.predefinedIssues.find((i) => i.toLowerCase().includes('restock') || i.toLowerCase().includes('supply'));
+        if (restockIssue) {
+          setSelectedIssue(restockIssue);
+          setCustomTitle(`${restockIssue} (${next.map((s) => s.replace(/^[^\s]+\s/, '')).join(', ')})`);
+        }
+      }
+      return next;
+    });
+  };
   
   // Attachments & Live Camera
   const [files, setFiles] = useState([]);
@@ -210,6 +287,7 @@ export default function TicketSubmissionForm({ area, buildingsList, placesList, 
 
     try {
       const ticketNumber = `TICK-${Date.now().toString().slice(-6)}`;
+      const supplyText = suppliesNeeded.length > 0 ? `\n\nSupplies Requested: ${suppliesNeeded.join(', ')}` : '';
       const payload = {
         ticketNumber,
         areaId: area.id,
@@ -223,7 +301,8 @@ export default function TicketSubmissionForm({ area, buildingsList, placesList, 
         assetTag: assetTag.trim() || 'N/A',
         selectedIssue,
         title: finalTitle,
-        description: description.trim() || selectedIssue,
+        description: (description.trim() || selectedIssue) + supplyText,
+        suppliesNeeded: suppliesNeeded.length > 0 ? suppliesNeeded : [],
         urgency,
         createdByEmail: user?.email || 'guest@wcatrojans.org',
         createdByName: user?.displayName || user?.email || 'WCA Staff / Guest',
@@ -298,6 +377,7 @@ export default function TicketSubmissionForm({ area, buildingsList, placesList, 
                 setSelectedRoom(roomsForPlace[0] || 'Room 101');
                 setCustomRoom('');
                 setAssetTag('');
+                setSuppliesNeeded([]);
                 setFiles([]);
                 setFilePreviews([]);
               }}
@@ -345,6 +425,24 @@ export default function TicketSubmissionForm({ area, buildingsList, placesList, 
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-7">
+          {qrPrefill && (qrPrefill.room || qrPrefill.campus || qrPrefill.tag) && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 flex items-center justify-between gap-3 text-emerald-900 text-xs">
+              <div className="flex items-center gap-2.5">
+                <QrCode className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                <div>
+                  <span className="font-extrabold">QR Quick-Scan Pre-Filled:</span>{' '}
+                  <span>
+                    {currentPlace?.name} • {selectedRoom === '__OTHER__' ? customRoom : selectedRoom}
+                    {assetTag ? ` • Tag: ${assetTag}` : ''}
+                  </span>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px] uppercase">
+                Auto-Linked
+              </span>
+            </div>
+          )}
+
           {errorMsg && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 text-red-800 text-sm">
               <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -501,6 +599,46 @@ export default function TicketSubmissionForm({ area, buildingsList, placesList, 
                 );
               })}
             </div>
+
+            {/* Housekeeping Quick-Tap Supply Checkboxes */}
+            {area.id === 'housekeeping' && (
+              <div className="mt-4 p-4 rounded-xl bg-emerald-50/60 border border-emerald-200">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Quick-Check Supplies Needed (Optional)</span>
+                  </span>
+                  {suppliesNeeded.length > 0 && (
+                    <span className="text-[11px] font-bold text-emerald-700">
+                      {suppliesNeeded.length} selected
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-emerald-700/80 mb-2.5">
+                  Tap any supplies that need restocking or bringing to the room so our custodial team can grab them on the way:
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {HOUSEKEEPING_SUPPLY_OPTIONS.map((item) => {
+                    const checked = suppliesNeeded.includes(item);
+                    return (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => toggleSupplyItem(item)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                          checked
+                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-400/40'
+                            : 'bg-white text-slate-700 border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50'
+                        }`}
+                      >
+                        <span>{item}</span>
+                        {checked && <CheckCircle className="w-3.5 h-3.5 text-emerald-200" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Custom / Detailed Issue Fields */}
             {(isCustomIssue || selectedIssue) && (

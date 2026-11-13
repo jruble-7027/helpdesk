@@ -56,7 +56,13 @@ import {
   X,
   Settings,
   Circle,
-  Edit3
+  Edit3,
+  QrCode,
+  CalendarClock,
+  Copy,
+  DollarSign,
+  ShieldCheck,
+  Package
 } from 'lucide-react';
 import { 
   db, 
@@ -65,18 +71,120 @@ import {
   assignTicket,
   addTicketComment,
   updateTicketStatus,
+  updateTicketLogistics,
+  subscribeToInventory,
+  submitTicket,
+  saveCatalogSettings,
   signInWithGoogle
 } from '../services/firebase';
 import { canModifyTicket, canCloseTicket, ROLES } from '../data/rolesData';
+import { DEFAULT_PLACES } from '../data/categoriesData';
 
 const STATUS_CONFIG = {
   new: { label: 'New', badge: 'bg-blue-100 text-blue-800 border-blue-300', dot: 'bg-blue-500' },
   assigned: { label: 'Assigned', badge: 'bg-indigo-100 text-indigo-800 border-indigo-300', dot: 'bg-indigo-500' },
   in_progress: { label: 'In Progress', badge: 'bg-amber-100 text-amber-800 border-amber-300', dot: 'bg-amber-500' },
   waiting: { label: 'Waiting on Requester', badge: 'bg-purple-100 text-purple-800 border-purple-300', dot: 'bg-purple-500' },
+  scheduled_break: { label: 'Scheduled for Break / Summer', badge: 'bg-cyan-100 text-cyan-800 border-cyan-300', dot: 'bg-cyan-500' },
   resolved: { label: 'Resolved', badge: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-500' },
   closed: { label: 'Closed', badge: 'bg-slate-100 text-slate-700 border-slate-300', dot: 'bg-slate-500' }
 };
+
+const CANNED_REPLIES = {
+  itsm: [
+    { label: '🔄 Restart & Test', text: 'Please restart your computer completely and test again. Let us know if the issue persists!' },
+    { label: '💻 Loaner Issued', text: 'We have issued a loaner device while your assigned computer is being diagnosed/serviced.' },
+    { label: '🔑 Password Reset', text: 'Your account password/permissions have been reset. Please sign in and verify access.' },
+    { label: '📦 Lenovo Warranty Part', text: 'A warranty replacement part has been ordered from Lenovo Support. We will update you as soon as it arrives.' },
+    { label: '✅ Resolved & Verified', text: 'This IT request has been resolved and verified working. Please reply if you need anything else!' }
+  ],
+  facilities: [
+    { label: '🛠️ Parts on Order', text: 'Replacement parts have been ordered for this repair. We will complete the work as soon as they arrive.' },
+    { label: '📅 Scheduled for Break', text: 'To avoid disrupting classes, this maintenance work has been scheduled for the upcoming school break.' },
+    { label: '👷 Contractor Scheduled', text: 'An outside service vendor/contractor has been scheduled to inspect and complete this repair.' },
+    { label: '✅ Repair Completed', text: 'Maintenance repair has been completed and tested. Thank you for reporting this!' }
+  ],
+  housekeeping: [
+    { label: '🧻 Supplies Restocked', text: 'Requested paper goods, soap, and classroom/restroom supplies have been restocked.' },
+    { label: '✨ Cleaned & Sanitized', text: 'The area has been cleaned, sanitized, and inspected by our custodial team.' },
+    { label: '🧹 Spill / Floor Care Done', text: 'Cleanup has been completed and wet-floor signage placed until dry.' }
+  ]
+};
+
+const DEFAULT_PM_SCHEDULES = [
+  {
+    id: 'pm-hvac-filters',
+    areaId: 'facilities',
+    areaName: 'Facilities & Maintenance',
+    title: 'PM: Monthly HVAC Air Filter Replacement & Belt Inspection',
+    frequency: 'Monthly',
+    location: 'Centennial Campus',
+    room: 'All Rooftop & Mechanical Units',
+    assetType: 'HVAC / Heating & Cooling',
+    urgency: 'medium',
+    description: 'Preventive Maintenance: Inspect and replace MERV-13 HVAC return filters, check thermostat calibration, and inspect condensate drain lines.'
+  },
+  {
+    id: 'pm-emergency-lights',
+    areaId: 'facilities',
+    areaName: 'Facilities & Maintenance',
+    title: 'PM: Monthly Fire Extinguisher & Exit Lighting Safety Walk',
+    frequency: 'Monthly',
+    location: 'Wesleyan Campus',
+    room: 'All Corridors & Exits',
+    assetType: 'Electrical / Lighting / Power',
+    urgency: 'high',
+    description: 'Preventive Maintenance: 30-second push-test on all emergency exit signs/lights and visual gauge inspection on corridor fire extinguishers.'
+  },
+  {
+    id: 'pm-gym-floors',
+    areaId: 'housekeeping',
+    areaName: 'Housekeeping & Custodial',
+    title: 'PM: Weekly Gymnasium Hardwood Floor Auto-Scrub & Tack',
+    frequency: 'Weekly',
+    location: 'Centennial Campus',
+    room: 'Gymnasium',
+    assetType: 'Gym / Cafeteria / Common Area',
+    urgency: 'medium',
+    description: 'Preventive Maintenance: Dust mop and auto-scrub gymnasium court surface, sanitize bleachers, and restock athletic locker rooms.'
+  },
+  {
+    id: 'pm-restroom-deep',
+    areaId: 'housekeeping',
+    areaName: 'Housekeeping & Custodial',
+    title: 'PM: Weekly Restroom Deep Descale & Dispenser Audit',
+    frequency: 'Weekly',
+    location: 'Centennial Campus',
+    room: 'Restrooms',
+    assetType: 'Restroom Supplies & Sanitation',
+    urgency: 'medium',
+    description: 'Preventive Maintenance: High-pressure sanitize restroom tile/grout, descale fixtures, check soap/towel dispenser batteries, and refill floor drain traps.'
+  },
+  {
+    id: 'pm-ups-closets',
+    areaId: 'itsm',
+    areaName: 'ITSM / Technology Support',
+    title: 'PM: Quarterly IDF/MDF Server Closet UPS & Filter Check',
+    frequency: 'Quarterly',
+    location: 'Centennial Campus',
+    room: 'Main Office',
+    assetType: 'Wi-Fi / Network / Internet',
+    urgency: 'medium',
+    description: 'Preventive Maintenance: Check UPS battery health & runtime logs, verify closet ambient temperature, and clean switch intake dust filters.'
+  },
+  {
+    id: 'pm-classroom-av',
+    areaId: 'itsm',
+    areaName: 'ITSM / Technology Support',
+    title: 'PM: Quarterly Classroom Promethean & Projector Firmware Check',
+    frequency: 'Quarterly',
+    location: 'Centennial Campus',
+    room: 'Room 101',
+    assetType: 'Smartboard / Projector / Classroom AV',
+    urgency: 'low',
+    description: 'Preventive Maintenance: Test HDMI/USB-C touch inputs, clean projector air filters, and apply latest panel OTA updates.'
+  }
+];
 
 const getUrgencyKey = (urgency) => {
   const u = (urgency || '').toLowerCase();
@@ -197,7 +305,7 @@ const getAssetCategoryIcon = (assetType = '', title = '', areaId = '') => {
   return Wrench;
 };
 
-export default function TicketDashboard({ user, userProfile, catalog, filterByMyTickets = false, onNewTicket }) {
+export default function TicketDashboard({ user, userProfile, catalog, onCatalogUpdate, filterByMyTickets = false, onNewTicket }) {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   
@@ -223,7 +331,34 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
 
   // Staff & Technician Assignment state
   const [staffMembers, setStaffMembers] = useState([]);
+  const [inventoryDevices, setInventoryDevices] = useState([]);
   const [myTicketsSubTab, setMyTicketsSubTab] = useState('all');
+
+  // Maintenance Logistics & Loaner Device state (Ticket Drawer)
+  const [poNumberInput, setPoNumberInput] = useState('');
+  const [costInput, setCostInput] = useState('');
+  const [partsUsedInput, setPartsUsedInput] = useState('');
+  const [loanerTagInput, setLoanerTagInput] = useState('');
+  const [loanerReturnedInput, setLoanerReturnedInput] = useState(false);
+  const [savingLogistics, setSavingLogistics] = useState(false);
+
+  // QR Code Room & Equipment Sticker Generator Modal State
+  const [showQrModal, setShowQrModal] = useState(false);
+  const placesList = catalog?.places?.length > 0 ? catalog.places : DEFAULT_PLACES;
+  const [qrAreaId, setQrAreaId] = useState('housekeeping');
+  const [qrPlaceId, setQrPlaceId] = useState(placesList[0]?.id || 'centennial');
+  const [qrRoom, setQrRoom] = useState(placesList[0]?.rooms?.[0] || 'Gymnasium');
+  const [qrAssetTag, setQrAssetTag] = useState('');
+  const [qrCopied, setQrCopied] = useState(false);
+
+  // Preventive Maintenance (PM) Schedules Modal State
+  const [showPmModal, setShowPmModal] = useState(false);
+  const [spawningPmId, setSpawningPmId] = useState(null);
+  const [newPmTitle, setNewPmTitle] = useState('');
+  const [newPmAreaId, setNewPmAreaId] = useState('facilities');
+  const [newPmFrequency, setNewPmFrequency] = useState('Monthly');
+  const [newPmLocation, setNewPmLocation] = useState('Centennial Campus');
+  const [newPmRoom, setNewPmRoom] = useState('Gymnasium');
 
   // Incident IQ Comment Composer & Notification State
   const [commentText, setCommentText] = useState('');
@@ -235,15 +370,29 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
   const [isUpdating, setIsUpdating] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Subscribe to Staff members for ticket assignment
+  // Subscribe to Staff members & Fleet Inventory
   useEffect(() => {
     const unsubStaff = subscribeToStaffMembers((members) => {
       setStaffMembers(members);
     });
+    const unsubInv = subscribeToInventory((items) => {
+      setInventoryDevices(items || []);
+    });
     return () => {
       if (unsubStaff) unsubStaff();
+      if (unsubInv) unsubInv();
     };
   }, []);
+
+  // Sync logistics inputs when selectedTicket changes
+  useEffect(() => {
+    if (!selectedTicket) return;
+    setPoNumberInput(selectedTicket.poNumber || '');
+    setCostInput(selectedTicket.estimatedCost || '');
+    setPartsUsedInput(selectedTicket.partsUsed || '');
+    setLoanerTagInput(selectedTicket.loanerTag || '');
+    setLoanerReturnedInput(Boolean(selectedTicket.loanerReturned));
+  }, [selectedTicket?.id]);
 
   // Real-time Firestore subscription
   useEffect(() => {
@@ -554,6 +703,193 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
   // Permission checkers
   const canModify = (ticketAreaId) => canModifyTicket(role, ticketAreaId);
   const canClose = (ticketAreaId) => canCloseTicket(role, ticketAreaId);
+
+  // 1-Tap Quick Claim (Assign to Current User) from Ticket Row or Drawer
+  const handleQuickClaimTicket = async (e, ticket) => {
+    if (e) e.stopPropagation();
+    if (!user || !ticket || !canModify(ticket.areaId)) return;
+    setIsUpdating(true);
+    try {
+      const selfAssignee = {
+        uid: user.uid,
+        email: user.email,
+        displayName: userProfile?.displayName || user.displayName || user.email
+      };
+      await assignTicket(ticket.id, selfAssignee, user, ticket, catalog);
+      if (selectedTicket && selectedTicket.id === ticket.id) {
+        setSelectedTicket((prev) => ({
+          ...prev,
+          assignedToEmail: selfAssignee.email,
+          assignedToName: selfAssignee.displayName,
+          assignedToUid: selfAssignee.uid,
+          status: prev.status === 'new' ? 'assigned' : prev.status
+        }));
+      }
+      setCommentSuccessMsg(`✓ Claimed ticket & assigned to ${selfAssignee.displayName}`);
+      setTimeout(() => setCommentSuccessMsg(''), 3500);
+    } catch (err) {
+      console.error('Quick claim error:', err);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  // 1-Tap Quick Resolve from Ticket Row
+  const handleQuickResolveRow = async (e, ticket) => {
+    if (e) e.stopPropagation();
+    if (!ticket || !canModify(ticket.areaId)) return;
+    setIsUpdating(true);
+    try {
+      await updateTicketStatus({
+        ticketId: ticket.id,
+        ticket,
+        newStatus: 'resolved',
+        statusLabel: 'Resolved',
+        user,
+        note: 'Quick-resolved from ticket queue',
+        catalog
+      });
+    } catch (err) {
+      console.error('Quick resolve error:', err);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  // Save Facilities PO # / Cost / Parts Used & IT Loaner Device Logistics
+  const handleSaveLogistics = async () => {
+    if (!selectedTicket || !canModify(selectedTicket.areaId)) return;
+    setSavingLogistics(true);
+    try {
+      const logisticsPayload = {
+        poNumber: poNumberInput.trim(),
+        estimatedCost: costInput.trim(),
+        partsUsed: partsUsedInput.trim(),
+        loanerTag: loanerTagInput.trim(),
+        loanerReturned: Boolean(loanerReturnedInput)
+      };
+      await updateTicketLogistics(selectedTicket.id, logisticsPayload, user);
+      setSelectedTicket((prev) => (prev ? { ...prev, ...logisticsPayload } : prev));
+      setCommentSuccessMsg('✓ Maintenance logistics, PO # & loaner details saved');
+      setTimeout(() => setCommentSuccessMsg(''), 4000);
+    } catch (err) {
+      console.error('Error saving logistics:', err);
+      alert('Could not save logistics details.');
+    } finally {
+      setSavingLogistics(false);
+    }
+  };
+
+  // Match Submitter's Assigned Fleet Device(s) from Inventory
+  const requesterFleetDevices = useMemo(() => {
+    if (!selectedTicket || !inventoryDevices || inventoryDevices.length === 0) return [];
+    const reqEmail = (selectedTicket.createdByEmail || selectedTicket.requester?.email || '').toLowerCase().trim();
+    const reqName = (selectedTicket.createdByName || selectedTicket.requester?.name || '').toLowerCase().trim();
+    const ticketTag = (selectedTicket.assetTag || '').toLowerCase().trim();
+
+    return inventoryDevices.filter((dev) => {
+      const devEmail = (dev.assignedUserEmail || '').toLowerCase().trim();
+      const devUser = (dev.assignedUser || '').toLowerCase().trim();
+      const devSerial = (dev.serial || '').toLowerCase().trim();
+      const devTag = (dev.tag || '').toLowerCase().trim();
+
+      if (ticketTag && ticketTag !== 'n/a' && (devSerial === ticketTag || devTag === ticketTag)) return true;
+      if (reqEmail && reqEmail !== 'guest@wcatrojans.org' && (devEmail === reqEmail || devUser.includes(reqEmail))) return true;
+      if (reqName && reqName.length > 3 && reqName !== 'wca staff / guest' && devUser && (devUser.includes(reqName) || reqName.includes(devUser))) return true;
+      return false;
+    });
+  }, [selectedTicket, inventoryDevices]);
+
+  // Preventive Maintenance (PM) Schedules List & Actions
+  const pmSchedules = catalog?.pmSchedules?.length > 0 ? catalog.pmSchedules : DEFAULT_PM_SCHEDULES;
+
+  const handleSpawnPmTicket = async (pm) => {
+    if (!pm) return;
+    setSpawningPmId(pm.id);
+    try {
+      const ticketNumber = `PM-${Date.now().toString().slice(-6)}`;
+      await submitTicket({
+        ticketNumber,
+        areaId: pm.areaId,
+        areaName: pm.areaName || (pm.areaId === 'facilities' ? 'Facilities & Maintenance' : pm.areaId === 'housekeeping' ? 'Housekeeping & Custodial' : 'ITSM / Technology Support'),
+        location: pm.location || 'Centennial Campus',
+        building: pm.location || 'Centennial Campus',
+        room: pm.room || 'General',
+        roomLocation: pm.room || 'General',
+        assetType: pm.assetType || 'Preventive Maintenance',
+        assetTag: `PM-${pm.frequency?.toUpperCase() || 'SCHED'}`,
+        selectedIssue: pm.title,
+        title: pm.title,
+        description: pm.description || `${pm.frequency} Preventive Maintenance Work Order`,
+        urgency: pm.urgency || 'medium',
+        isPreventiveMaintenance: true,
+        pmFrequency: pm.frequency || 'Monthly',
+        createdByEmail: user?.email || 'pm-scheduler@wcatrojans.org',
+        createdByName: user?.displayName || 'PM Scheduler',
+        createdById: user?.uid || 'pm-system'
+      }, []);
+    } catch (err) {
+      console.error('Error spawning PM ticket:', err);
+      alert('Failed to spawn PM ticket.');
+    } finally {
+      setSpawningPmId(null);
+    }
+  };
+
+  const handleAddPmSchedule = async (e) => {
+    e.preventDefault();
+    if (!newPmTitle.trim()) return;
+    const areaNameMap = {
+      facilities: 'Facilities & Maintenance',
+      housekeeping: 'Housekeeping & Custodial',
+      itsm: 'ITSM / Technology Support'
+    };
+    const newItem = {
+      id: `pm-${Date.now()}`,
+      areaId: newPmAreaId,
+      areaName: areaNameMap[newPmAreaId] || 'Facilities & Maintenance',
+      title: newPmTitle.trim().startsWith('PM:') ? newPmTitle.trim() : `PM: ${newPmTitle.trim()}`,
+      frequency: newPmFrequency,
+      location: newPmLocation,
+      room: newPmRoom.trim() || 'General',
+      assetType: 'Preventive Maintenance',
+      urgency: 'medium',
+      description: `${newPmFrequency} Preventive Maintenance task at ${newPmLocation} (${newPmRoom.trim() || 'General'}).`
+    };
+    const updatedList = [...pmSchedules, newItem];
+    const updatedCatalog = { ...catalog, pmSchedules: updatedList };
+    if (onCatalogUpdate) onCatalogUpdate(updatedCatalog);
+    try {
+      await saveCatalogSettings(updatedCatalog);
+      setNewPmTitle('');
+    } catch (err) {
+      console.error('Error saving PM schedule:', err);
+    }
+  };
+
+  const handleDeletePmSchedule = async (pmId) => {
+    const updatedList = pmSchedules.filter((item) => item.id !== pmId);
+    const updatedCatalog = { ...catalog, pmSchedules: updatedList };
+    if (onCatalogUpdate) onCatalogUpdate(updatedCatalog);
+    try {
+      await saveCatalogSettings(updatedCatalog);
+    } catch (err) {
+      console.error('Error deleting PM schedule:', err);
+    }
+  };
+
+  // QR Room & Equipment Sticker Deep-Link Builder
+  const selectedQrPlace = placesList.find((p) => p.id === qrPlaceId) || placesList[0];
+  const qrRoomsForPlace = selectedQrPlace?.rooms?.length > 0 ? selectedQrPlace.rooms : ['Gymnasium', 'Cafeteria', 'Restrooms', 'Main Office', 'Room 101'];
+  const qrOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://wca-tickets-58f6c.web.app';
+  const qrDeepLinkUrl = `${qrOrigin}/?area=${encodeURIComponent(qrAreaId)}&campus=${encodeURIComponent(selectedQrPlace?.id || 'centennial')}&room=${encodeURIComponent(qrRoom)}${qrAssetTag.trim() ? `&tag=${encodeURIComponent(qrAssetTag.trim())}` : ''}`;
+  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(qrDeepLinkUrl)}`;
+
+  const handleCopyQrLink = () => {
+    navigator.clipboard?.writeText(qrDeepLinkUrl);
+    setQrCopied(true);
+    setTimeout(() => setQrCopied(false), 2500);
+  };
 
   const userEmailLower = (user?.email || '').toLowerCase().trim();
   const userUid = user?.uid;
@@ -1139,22 +1475,46 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
         </div>
       )}
 
-      {/* Section Header with Queue Title and "+ NEW TICKET" button */}
+      {/* Section Header with Queue Title and Action Toolbar */}
       {!filterByMyTickets && (
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <div>
             <h3 className="text-xl font-extrabold text-slate-900">Highest Priority Tickets</h3>
             <p className="text-xs text-slate-500">Your prioritized queue in {getAreaLabel()}</p>
           </div>
-          {onNewTicket && (
-            <button
-              onClick={() => onNewTicket(selectedArea)}
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-1.5 transition-all self-start sm:self-auto hover:shadow"
-            >
-              <Plus className="w-4 h-4" />
-              <span>NEW TICKET</span>
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            {!isRequester && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowQrModal(true)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 shadow-xs flex items-center gap-1.5 transition-all"
+                  title="Print Scan-to-Report QR Code Room & Equipment Stickers"
+                >
+                  <QrCode className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>QR Room Stickers</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPmModal(true)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 shadow-xs flex items-center gap-1.5 transition-all"
+                  title="Manage & Spawn Recurring Preventive Maintenance Work Orders"
+                >
+                  <CalendarClock className="w-3.5 h-3.5 text-amber-600" />
+                  <span>PM Schedules</span>
+                </button>
+              </>
+            )}
+            {onNewTicket && (
+              <button
+                onClick={() => onNewTicket(selectedArea)}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-1.5 transition-all hover:shadow"
+              >
+                <Plus className="w-4 h-4" />
+                <span>NEW TICKET</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -1183,6 +1543,7 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
             <option value="assigned">Assigned</option>
             <option value="in_progress">In Progress</option>
             <option value="waiting">Waiting</option>
+            <option value="scheduled_break">Scheduled for Break / Summer</option>
             <option value="resolved">Resolved</option>
             <option value="closed">Closed</option>
           </select>
@@ -1275,6 +1636,8 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
               const status = STATUS_CONFIG[ticket.status] || STATUS_CONFIG.new;
               const priorityMeta = getPriorityMeta(ticket.urgency);
               const AssetIcon = getAssetCategoryIcon(ticket.assetType, ticket.title, ticket.areaId);
+              const userCanModifyRow = canModify(ticket.areaId);
+              const isResolvedOrClosed = ticket.status === 'resolved' || ticket.status === 'closed';
 
               return (
                 <div
@@ -1329,12 +1692,60 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
                               </span>
                             </>
                           )}
+                          {ticket.poNumber && (
+                            <span className="text-amber-800 font-bold bg-amber-100/80 border border-amber-200 px-1.5 py-0.2 rounded">
+                              PO: {ticket.poNumber}
+                            </span>
+                          )}
+                          {ticket.loanerTag && (
+                            <span className={`font-bold px-1.5 py-0.2 rounded border ${ticket.loanerReturned ? 'bg-slate-100 text-slate-600 border-slate-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                              💻 Loaner: {ticket.loanerTag}{ticket.loanerReturned ? ' (Returned)' : ''}
+                            </span>
+                          )}
                         </div>
+
+                        {/* Housekeeping Supply Badges on Row */}
+                        {ticket.suppliesNeeded && ticket.suppliesNeeded.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {ticket.suppliesNeeded.map((sup) => (
+                              <span key={sup} className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                {sup}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
 
-                    {/* Right: Priority Score Pill & Requester Info */}
-                    <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+                    {/* Right: 1-Tap Mobile Actions, Priority Score Pill & Requester Info */}
+                    <div className="flex items-center gap-1.5 sm:gap-2.5 flex-shrink-0">
+                      {/* 1-Tap Claim & Quick Resolve for Technicians / Custodians */}
+                      {userCanModifyRow && !isResolvedOrClosed && (
+                        <div className="flex items-center gap-1">
+                          {!ticket.assignedToEmail && user && (
+                            <button
+                              type="button"
+                              disabled={isUpdating}
+                              onClick={(e) => handleQuickClaimTicket(e, ticket)}
+                              title="1-Tap Claim: Assign this ticket to me"
+                              className="px-2 py-1 rounded-lg text-[11px] font-extrabold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors"
+                            >
+                              Claim
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={isUpdating}
+                            onClick={(e) => handleQuickResolveRow(e, ticket)}
+                            title="1-Tap Quick Resolve"
+                            className="px-2 py-1 rounded-lg text-[11px] font-extrabold bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 border border-emerald-200 transition-colors flex items-center gap-1"
+                          >
+                            <Check className="w-3 h-3" />
+                            <span className="hidden md:inline">Resolve</span>
+                          </button>
+                        </div>
+                      )}
+
                       {/* Priority Pill */}
                       <div className="text-center">
                         <span className={`inline-block font-mono text-xs font-extrabold px-2.5 py-1 rounded-lg ${priorityMeta.pillBg} shadow-sm`} title={`Priority: ${priorityMeta.label}`}>
@@ -1517,15 +1928,27 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
                     <UserCheck className="w-4 h-4 text-amber-500" />
                     <span>Assign Technician</span>
                   </label>
-                  {selectedTicket.assignedToEmail ? (
-                    <span className="text-[11px] font-bold text-indigo-800 bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-full">
-                      Assigned
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-medium text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full">
-                      Unassigned
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {user && (selectedTicket.assignedToEmail || '').toLowerCase() !== (user.email || '').toLowerCase() && (
+                      <button
+                        type="button"
+                        disabled={isUpdating}
+                        onClick={(e) => handleQuickClaimTicket(e, selectedTicket)}
+                        className="text-[11px] font-extrabold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-0.5 rounded-full transition-colors"
+                      >
+                        + Claim Ticket (Assign to Me)
+                      </button>
+                    )}
+                    {selectedTicket.assignedToEmail ? (
+                      <span className="text-[11px] font-bold text-indigo-800 bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-full">
+                        Assigned
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-medium text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full">
+                        Unassigned
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <select
@@ -1603,6 +2026,164 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
                 <span className={`px-2.5 py-1 rounded-full font-bold border ${STATUS_CONFIG[selectedTicket.status]?.badge}`}>
                   {STATUS_CONFIG[selectedTicket.status]?.label || selectedTicket.status}
                 </span>
+              </div>
+            )}
+
+            {/* Auto-Linked Submitter Fleet Device(s) from Inventory (IT & Staff View) */}
+            {!isRequester && requesterFleetDevices.length > 0 && (
+              <div className="p-4 bg-blue-50/60 rounded-xl border border-blue-200 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-blue-900 flex items-center gap-1.5">
+                    <Laptop className="w-4 h-4 text-blue-600" />
+                    <span>Submitter&apos;s Assigned Fleet Device ({requesterFleetDevices.length})</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                    Auto-Linked from Inventory
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {requesterFleetDevices.map((dev) => {
+                    const serialClean = (dev.serial || '').trim();
+                    const isLenovo = (dev.vendor || dev.name || '').toLowerCase().includes('lenovo');
+                    return (
+                      <div key={dev.id || dev.serial} className="p-3 bg-white rounded-xl border border-blue-200/80 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+                        <div className="space-y-0.5">
+                          <div className="font-extrabold text-slate-900 flex items-center gap-2 flex-wrap">
+                            <span>{dev.name}</span>
+                            {dev.tag && <span className="font-mono text-[11px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded border border-slate-200">{dev.tag}</span>}
+                            {dev.warrantyStatus && (
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                                dev.warrantyStatus === 'In Warranty'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-slate-100 text-slate-600 border-slate-200'
+                              }`}>
+                                <ShieldCheck className="w-3 h-3 inline mr-0.5" />
+                                {dev.warrantyStatus}{dev.warrantyEndDate ? ` (exp. ${dev.warrantyEndDate})` : ''}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-600 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                            <span>Serial: <strong className="font-mono text-slate-900">{serialClean || 'N/A'}</strong></span>
+                            {dev.purchaseDate && <span>Purchased: <strong>{dev.purchaseDate}</strong></span>}
+                            {dev.replacementDate && <span>5-Yr Replace: <strong className="text-amber-700">{dev.replacementDate}</strong></span>}
+                          </div>
+                          {dev.specs && (
+                            <div className="text-[11px] text-slate-500 truncate max-w-xl">{dev.specs}</div>
+                          )}
+                        </div>
+                        {serialClean && isLenovo && (
+                          <a
+                            href={`https://pcsupport.lenovo.com/us/en/Search?query=${encodeURIComponent(serialClean)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] shrink-0 self-start sm:self-center"
+                          >
+                            <span>Lenovo Support</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Housekeeping Supplies Requested Banner (if any) */}
+            {selectedTicket.suppliesNeeded && selectedTicket.suppliesNeeded.length > 0 && (
+              <div className="p-3.5 bg-emerald-50/70 rounded-xl border border-emerald-200">
+                <div className="text-xs font-extrabold uppercase tracking-wider text-emerald-900 mb-2 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Supplies Requested for Restock</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedTicket.suppliesNeeded.map((sup) => (
+                    <span key={sup} className="px-2.5 py-1 rounded-lg bg-white text-emerald-900 border border-emerald-300 text-xs font-bold shadow-2xs">
+                      {sup}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Maintenance Logistics: PO #, Parts Cost & IT Loaner Tracker (Staff/Techs) */}
+            {canModify(selectedTicket.areaId) && (
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                    <Package className="w-4 h-4 text-amber-600" />
+                    <span>
+                      {selectedTicket.areaId === 'itsm'
+                        ? 'IT Loaner Device & Repair Logistics (PO # / Cost)'
+                        : 'Maintenance Logistics, Parts Used & WCA PO #'}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    disabled={savingLogistics}
+                    onClick={handleSaveLogistics}
+                    className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold text-xs shadow-2xs transition-colors disabled:opacity-50"
+                  >
+                    {savingLogistics ? 'Saving...' : 'Save Logistics'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">WCA PO # / Invoice</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. PO #000142"
+                      value={poNumberInput}
+                      onChange={(e) => setPoNumberInput(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Est. Parts / Service Cost ($)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 145.00"
+                      value={costInput}
+                      onChange={(e) => setCostInput(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Parts / Materials Used</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 2x MERV-13 Filters, Ballast"
+                      value={partsUsedInput}
+                      onChange={(e) => setPartsUsedInput(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold text-slate-800"
+                    />
+                  </div>
+                </div>
+
+                {selectedTicket.areaId === 'itsm' && (
+                  <div className="pt-2 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+                    <div className="flex items-center gap-2 flex-1">
+                      <span className="text-[11px] font-bold text-blue-800 whitespace-nowrap">💻 Loaner Device Tag:</span>
+                      <input
+                        type="text"
+                        placeholder="e.g. LOANER-L13-02 or Serial #"
+                        value={loanerTagInput}
+                        onChange={(e) => setLoanerTagInput(e.target.value)}
+                        className="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-mono font-semibold text-slate-800"
+                      />
+                    </div>
+                    <label className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={loanerReturnedInput}
+                        onChange={(e) => setLoanerReturnedInput(e.target.checked)}
+                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span>Loaner Returned by User</span>
+                    </label>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1889,6 +2470,23 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
                         T<sub className="text-[8px]">x</sub>
                       </button>
                     </div>
+                  </div>
+
+                  {/* 1-Click Canned Reply Chips (Tailored by Department) */}
+                  <div className="px-3 py-2 bg-slate-50/50 border-b border-slate-100 flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">
+                      Quick Reply:
+                    </span>
+                    {(CANNED_REPLIES[selectedTicket.areaId] || CANNED_REPLIES.itsm).map((tpl) => (
+                      <button
+                        key={tpl.label}
+                        type="button"
+                        onClick={() => setCommentText((prev) => (prev ? `${prev}\n${tpl.text}` : tpl.text))}
+                        className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-900 border border-slate-200 hover:border-amber-300 transition-colors shadow-2xs"
+                      >
+                        {tpl.label}
+                      </button>
+                    ))}
                   </div>
 
                   {/* Main Textarea */}
@@ -2258,11 +2856,21 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
 
           <div>
             <span className="text-slate-600">Parts / Materials Consumed:</span>
-            <div className="mt-4 border-b border-slate-400" />
+            {selectedTicket.partsUsed ? (
+              <div className="mt-1 font-bold text-slate-900 border-b border-slate-400 pb-1">{selectedTicket.partsUsed}</div>
+            ) : (
+              <div className="mt-4 border-b border-slate-400" />
+            )}
           </div>
           <div>
-            <span className="text-slate-600">Total Hours Billed / Logged:</span>
-            <div className="mt-4 border-b border-slate-400" />
+            <span className="text-slate-600">WCA PO # / Cost / Hours:</span>
+            {selectedTicket.poNumber || selectedTicket.estimatedCost ? (
+              <div className="mt-1 font-bold text-slate-900 border-b border-slate-400 pb-1">
+                {selectedTicket.poNumber || ''} {selectedTicket.estimatedCost ? `($${selectedTicket.estimatedCost})` : ''}
+              </div>
+            ) : (
+              <div className="mt-4 border-b border-slate-400" />
+            )}
           </div>
 
           <div>
@@ -2279,6 +2887,253 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
       {/* Footer Note */}
       <div className="text-center text-[10px] text-slate-400 border-t border-slate-200 pt-3">
         Wesleyan Christian Academy Helpdesk • https://wca-tickets-58f6c.web.app • Ticket #{selectedTicket.ticketNumber || selectedTicket.id}
+      </div>
+    </div>
+  )}
+
+  {/* --- QR CODE ROOM & EQUIPMENT STICKER GENERATOR MODAL --- */}
+  {showQrModal && (
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="bg-[#0b1c2d] px-6 py-4 flex items-center justify-between text-white">
+          <div className="flex items-center gap-2.5">
+            <QrCode className="w-5 h-5 text-emerald-400" />
+            <div>
+              <h3 className="font-extrabold text-sm tracking-wide">Scan-to-Report QR Room &amp; Equipment Stickers</h3>
+              <p className="text-[11px] text-slate-300">Print QR stickers for classrooms, restrooms, copiers, or athletic facilities</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowQrModal(false)}
+            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5 max-h-[82vh] overflow-y-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">1. Target Department</label>
+              <select
+                value={qrAreaId}
+                onChange={(e) => setQrAreaId(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 font-semibold bg-white text-slate-900"
+              >
+                <option value="housekeeping">Housekeeping &amp; Custodial</option>
+                <option value="facilities">Facilities &amp; Maintenance</option>
+                <option value="itsm">ITSM / Technology Support</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">2. Campus Location</label>
+              <select
+                value={qrPlaceId}
+                onChange={(e) => {
+                  const nextId = e.target.value;
+                  setQrPlaceId(nextId);
+                  const found = placesList.find((p) => p.id === nextId);
+                  if (found?.rooms?.length > 0) setQrRoom(found.rooms[0]);
+                }}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 font-semibold bg-white text-slate-900"
+              >
+                {placesList.map((pl) => (
+                  <option key={pl.id} value={pl.id}>{pl.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">3. Room / Restroom / Facility</label>
+              <select
+                value={qrRoom}
+                onChange={(e) => setQrRoom(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 font-semibold bg-white text-slate-900"
+              >
+                {qrRoomsForPlace.map((rm) => (
+                  <option key={rm} value={rm}>{rm}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">4. Equipment Tag / Serial (Optional)</label>
+              <input
+                type="text"
+                placeholder="e.g. COPIER-2F or Promethean"
+                value={qrAssetTag}
+                onChange={(e) => setQrAssetTag(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 font-semibold bg-white text-slate-900"
+              />
+            </div>
+          </div>
+
+          {/* Printable Sticker Preview Card */}
+          <div className="p-5 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 flex flex-col sm:flex-row items-center gap-5">
+            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm shrink-0">
+              <img
+                src={qrImageUrl}
+                alt="Room QR Code"
+                className="w-36 h-36 object-contain"
+              />
+            </div>
+            <div className="space-y-2 text-center sm:text-left flex-1 min-w-0">
+              <div className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
+                Wesleyan Christian Academy • Scan to Report
+              </div>
+              <h4 className="text-lg font-black text-slate-900 leading-tight">
+                {selectedQrPlace?.name} — {qrRoom}
+              </h4>
+              <p className="text-xs text-slate-600">
+                Scan with your phone camera to report a{' '}
+                <strong className="text-slate-900">
+                  {qrAreaId === 'housekeeping' ? 'Housekeeping / Restock' : qrAreaId === 'facilities' ? 'Facilities Maintenance' : 'Technology Support'}
+                </strong>{' '}
+                request with this room pre-filled!
+              </p>
+              <div className="pt-1 flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyQrLink}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{qrCopied ? '✓ Link Copied!' : 'Copy Direct Link'}</span>
+                </button>
+                <a
+                  href={qrImageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black shadow-xs"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Open / Print QR Sticker</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
+
+  {/* --- PREVENTIVE MAINTENANCE (PM) SCHEDULES MODAL --- */}
+  {showPmModal && (
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="bg-[#0b1c2d] px-6 py-4 flex items-center justify-between text-white">
+          <div className="flex items-center gap-2.5">
+            <CalendarClock className="w-5 h-5 text-amber-400" />
+            <div>
+              <h3 className="font-extrabold text-sm tracking-wide">Recurring Preventive Maintenance (PM) Schedules</h3>
+              <p className="text-[11px] text-slate-300">Manage routine Facilities, Housekeeping &amp; IT checks and spawn work orders in 1 click</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowPmModal(false)}
+            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5 max-h-[82vh] overflow-y-auto">
+          {/* Add New PM Template Form */}
+          <form onSubmit={handleAddPmSchedule} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
+              + Add Recurring PM Schedule Template
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 text-xs">
+              <input
+                type="text"
+                required
+                placeholder="e.g. Monthly Ice Machine Sanitization & Filter Change"
+                value={newPmTitle}
+                onChange={(e) => setNewPmTitle(e.target.value)}
+                className="sm:col-span-5 px-3 py-2 rounded-lg border border-slate-300 bg-white font-semibold"
+              />
+              <select
+                value={newPmAreaId}
+                onChange={(e) => setNewPmAreaId(e.target.value)}
+                className="sm:col-span-3 px-2.5 py-2 rounded-lg border border-slate-300 bg-white font-semibold"
+              >
+                <option value="facilities">Facilities</option>
+                <option value="housekeeping">Housekeeping</option>
+                <option value="itsm">IT Support</option>
+              </select>
+              <select
+                value={newPmFrequency}
+                onChange={(e) => setNewPmFrequency(e.target.value)}
+                className="sm:col-span-2 px-2.5 py-2 rounded-lg border border-slate-300 bg-white font-semibold"
+              >
+                <option value="Weekly">Weekly</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Quarterly">Quarterly</option>
+                <option value="Annual">Annual</option>
+              </select>
+              <button
+                type="submit"
+                className="sm:col-span-2 px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-black"
+              >
+                Add PM
+              </button>
+            </div>
+          </form>
+
+          {/* PM Schedule List */}
+          <div className="space-y-2.5">
+            {pmSchedules.map((pm) => (
+              <div
+                key={pm.id}
+                className="p-3.5 rounded-xl border border-slate-200 hover:border-slate-300 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
+              >
+                <div className="space-y-1 min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
+                      pm.areaId === 'facilities'
+                        ? 'bg-amber-100 text-amber-800'
+                        : pm.areaId === 'housekeeping'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-blue-100 text-blue-800'
+                    }`}>
+                      {pm.areaId}
+                    </span>
+                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                      🔁 {pm.frequency}
+                    </span>
+                    <span className="text-[11px] text-slate-500 font-medium">
+                      {pm.location} • {pm.room}
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-bold text-slate-900">{pm.title}</h4>
+                  <p className="text-xs text-slate-500 line-clamp-2">{pm.description}</p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={spawningPmId === pm.id}
+                    onClick={() => handleSpawnPmTicket(pm)}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition-colors disabled:opacity-50"
+                  >
+                    {spawningPmId === pm.id ? 'Creating...' : '⚡ Spawn Ticket Now'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeletePmSchedule(pm.id)}
+                    title="Remove PM Template"
+                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   )}
