@@ -11,6 +11,7 @@ import FieldCustomizer from './components/FieldCustomizer';
 import AssetsView from './components/AssetsView';
 import PartsView from './components/PartsView';
 import PlacesView from './components/PlacesView';
+import ErrorBoundary from './components/ErrorBoundary';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -160,6 +161,7 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1">
+        <ErrorBoundary key={currentView} onReset={() => setCurrentView('submit')}>
         {/* Module 1: DASH (Incident IQ KPI Cockpit & Ticket Queue) */}
         {currentView === 'dashboard' && (
           <TicketDashboard 
@@ -248,6 +250,7 @@ export default function App() {
             onCatalogUpdate={(updated) => setCatalog(updated)}
           />
         )}
+        </ErrorBoundary>
       </main>
 
       {/* Footer */}

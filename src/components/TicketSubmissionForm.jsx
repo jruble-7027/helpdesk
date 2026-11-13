@@ -13,7 +13,7 @@ import {
   Tag, 
   AlertTriangle 
 } from 'lucide-react';
-import { URGENCY_LEVELS, BUILDINGS } from '../data/categoriesData';
+import { URGENCY_LEVELS, BUILDINGS, DEFAULT_PLACES } from '../data/categoriesData';
 import { submitTicket } from '../services/firebase';
 
 export default function TicketSubmissionForm({ area, buildingsList, placesList, user, onBack, onTicketCreated }) {

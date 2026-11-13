@@ -169,7 +169,7 @@ export default function AssetsView({ onReportIssue }) {
             type="text"
             placeholder="Search by asset tag, serial, model, room, assignee..."
             value={search}
-            onChange={(e) => setSearchQuery ? setSearchQuery(e.target.value) : setSearch(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
           />
         </div>
