@@ -16,7 +16,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'submit' | 'my-tickets' | 'assets' | 'parts' | 'users' | 'places' | 'customizer'
+  const [currentView, setCurrentView] = useState('submit'); // 'submit' | 'dashboard' | 'my-tickets' | 'users' | 'customizer'
   const [selectedArea, setSelectedArea] = useState(null);
   const [catalog, setCatalog] = useState({ buildings: BUILDINGS, areas: AREAS, places: DEFAULT_PLACES });
 
