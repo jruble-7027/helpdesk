@@ -280,7 +280,7 @@ export default function App() {
           <div className="flex items-center gap-2">
             <span className="font-extrabold text-white">WCA Helpdesk</span>
             <span>•</span>
-            <span>West Central Area Schools Service Portal</span>
+            <span>Wesleyan Christian Academy Service Portal</span>
           </div>
           <div className="flex items-center gap-2 text-slate-500">
             <span>DASH</span>

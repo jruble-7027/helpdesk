@@ -1,5 +1,5 @@
 /**
- * West Central Area Schools — Helpdesk Email Webhook & Notification Dispatcher
+ * Wesleyan Christian Academy — Helpdesk Email Webhook & Notification Dispatcher
  * Google Apps Script for Google Workspace (@wcatrojans.org)
  *
  * Capabilities:

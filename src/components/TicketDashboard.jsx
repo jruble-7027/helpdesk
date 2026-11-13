@@ -1203,7 +1203,7 @@ export default function TicketDashboard({ user, userProfile, catalog, filterByMy
               <div className="max-w-md mx-auto">
                 <h3 className="text-lg font-black text-slate-900">Sign in to View Your Tickets</h3>
                 <p className="text-sm text-slate-600 mt-1">
-                  Please sign in with your West Central Area Schools Google account to track your submitted requests and assigned tickets.
+                  Please sign in with your Wesleyan Christian Academy Google account to track your submitted requests and assigned tickets.
                 </p>
               </div>
               <button

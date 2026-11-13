@@ -44,7 +44,7 @@ export default function Navbar({
                 <span className="text-amber-400 font-extrabold">HELPDESK</span>
               </div>
               <p className="text-[11px] text-slate-400 font-medium hidden sm:block tracking-wide">
-                West Central Area Schools
+                Wesleyan Christian Academy
               </p>
             </div>
           </div>

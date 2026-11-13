@@ -120,7 +120,7 @@ export default function PlacesView({
               Places & Campus Buildings
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-              West Central Area school facilities, addresses, wings, and lead technicians.
+              Wesleyan Christian Academy school facilities, addresses, wings, and lead technicians.
             </p>
           </div>
         </div>

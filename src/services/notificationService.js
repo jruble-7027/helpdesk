@@ -42,7 +42,7 @@ export function buildTicketEmailHtml({
                 <tr>
                   <td>
                     <div style="color: #f59e0b; font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 4px;">
-                      West Central Area Schools
+                      Wesleyan Christian Academy
                     </div>
                     <div style="color: #ffffff; font-size: 22px; font-weight: 800; letter-spacing: -0.5px;">
                       WCA Helpdesk
@@ -139,7 +139,7 @@ export function buildTicketEmailHtml({
                 You received this email because you are a participant or assignee on Ticket ${ticketNumber}.
               </p>
               <p style="margin: 0; font-size: 11px; color: #94a3b8;">
-                West Central Area Schools Helpdesk &bull; <a href="${ticketUrl}" style="color: #64748b; text-decoration: underline;">Open Helpdesk Portal</a>
+                Wesleyan Christian Academy Helpdesk &bull; <a href="${ticketUrl}" style="color: #64748b; text-decoration: underline;">Open Helpdesk Portal</a>
               </p>
             </td>
           </tr>
