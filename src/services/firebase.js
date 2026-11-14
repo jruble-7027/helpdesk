@@ -30,7 +30,7 @@ import {
   getDownloadURL 
 } from 'firebase/storage';
 import { SUPER_ADMIN_EMAILS } from '../data/rolesData';
-import { AREAS as DEFAULT_AREAS, BUILDINGS as DEFAULT_BUILDINGS, DEFAULT_PLACES } from '../data/categoriesData';
+import { AREAS as DEFAULT_AREAS, BUILDINGS as DEFAULT_BUILDINGS, DEFAULT_PLACES, DEFAULT_EMAIL_WEBHOOK_URL } from '../data/categoriesData';
 
 // Production Firebase Configuration for WCA Tickets
 const firebaseConfig = {
@@ -159,6 +159,30 @@ export const subscribeToCatalog = (callback) => {
 
       data.buildings = data.places.map((p) => p.name);
 
+      // Ensure emailWebhookUrl is set to default Google Apps Script URL if empty
+      if (!data.emailWebhookUrl || !data.emailWebhookUrl.trim()) {
+        data.emailWebhookUrl = DEFAULT_EMAIL_WEBHOOK_URL;
+        needsPersist = true;
+      }
+
+      // Ensure each area has notifyEmails initialized (with jruble@wcatrojans.org default for itsm)
+      if (data.areas && Array.isArray(data.areas)) {
+        data.areas = data.areas.map((area) => {
+          const defaultArea = DEFAULT_AREAS.find((da) => da.id === area.id);
+          if (area.notifyEmails === undefined) {
+            needsPersist = true;
+            return {
+              ...area,
+              notifyEmails: defaultArea?.notifyEmails || ''
+            };
+          }
+          return area;
+        });
+      } else {
+        data.areas = DEFAULT_AREAS;
+        needsPersist = true;
+      }
+
       if (needsPersist) {
         try {
           await setDoc(catalogRef, {
@@ -240,7 +264,41 @@ export const submitTicket = async (ticketData, files = []) => {
       updatedAt: serverTimestamp()
     });
 
-    return { id: docRef.id, ...ticketData, attachments: uploadedPhotos };
+    const createdTicket = { id: docRef.id, ...ticketData, attachments: uploadedPhotos, status: 'new' };
+
+    // Automatically notify department administrator(s) of the new ticket submission
+    try {
+      const catalogSnap = await getDoc(doc(db, 'settings', 'catalog'));
+      const catalogData = catalogSnap.exists() ? catalogSnap.data() : {};
+      const catalogAreas = catalogData.areas || DEFAULT_AREAS;
+      const matchedArea = catalogAreas.find((a) => a.id === ticketData.areaId);
+      const defaultArea = DEFAULT_AREAS.find((a) => a.id === ticketData.areaId);
+      const notifyEmails = (
+        ticketData.departmentNotifyEmails ||
+        matchedArea?.notifyEmails ||
+        defaultArea?.notifyEmails ||
+        ''
+      ).trim();
+      const webhookUrl = (catalogData.emailWebhookUrl || DEFAULT_EMAIL_WEBHOOK_URL).trim();
+
+      if (notifyEmails) {
+        const { sendTicketNotification } = await import('./notificationService');
+        await sendTicketNotification({
+          type: 'created',
+          ticket: createdTicket,
+          recipientEmailOverride: notifyEmails,
+          actor: {
+            displayName: ticketData.createdByName || 'Requester',
+            email: ticketData.createdByEmail || ''
+          },
+          webhookUrl
+        });
+      }
+    } catch (notifErr) {
+      console.warn("Could not dispatch new ticket admin notification:", notifErr);
+    }
+
+    return createdTicket;
   } catch (error) {
     console.error("Error creating ticket:", error);
     throw error;

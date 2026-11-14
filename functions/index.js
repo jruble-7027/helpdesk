@@ -210,11 +210,12 @@ exports.sendTicketNotification = onRequest(
       let webhookDispatched = false;
       let webhookStatus = null;
       let webhookError = null;
+      const DEFAULT_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbx-INHrjAlII-Z2Xhyu_-YOikTH4X9EvVBD7TyWLnXYEU5jlvrweBLNlTgeHIzADoXb8g/exec";
 
       try {
         const catalogSnap = await db.collection("settings").doc("catalog").get();
         const catalogData = catalogSnap.exists ? catalogSnap.data() : {};
-        const webhookUrl = req.body.webhookUrl || catalogData.emailWebhookUrl;
+        const webhookUrl = req.body.webhookUrl || catalogData.emailWebhookUrl || DEFAULT_WEBHOOK_URL;
 
         if (webhookUrl && typeof webhookUrl === "string" && webhookUrl.startsWith("http")) {
           const webhookResp = await fetch(webhookUrl, {

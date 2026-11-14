@@ -1,3 +1,5 @@
+export const DEFAULT_EMAIL_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbx-INHrjAlII-Z2Xhyu_-YOikTH4X9EvVBD7TyWLnXYEU5jlvrweBLNlTgeHIzADoXb8g/exec';
+
 export const AREAS = [
   {
     id: 'facilities',
@@ -5,6 +7,7 @@ export const AREAS = [
     shortName: 'Facilities',
     tagline: 'HVAC, plumbing, electrical, doors, furniture & building repairs',
     icon: 'Wrench',
+    notifyEmails: '',
     badgeColor: 'bg-amber-100 text-amber-800 border-amber-300',
     accentColor: 'border-amber-500',
     bannerGradient: 'from-amber-600 to-amber-800',
@@ -38,6 +41,7 @@ export const AREAS = [
     shortName: 'Housekeeping',
     tagline: 'Spills, restroom restocking, trash, sanitization & floor care',
     icon: 'Sparkles',
+    notifyEmails: '',
     badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
     accentColor: 'border-emerald-500',
     bannerGradient: 'from-emerald-600 to-emerald-800',
@@ -71,6 +75,7 @@ export const AREAS = [
     shortName: 'IT Support',
     tagline: 'Chromebooks, laptops, displays, Wi-Fi, printers & accounts',
     icon: 'Laptop',
+    notifyEmails: 'jruble@wcatrojans.org',
     badgeColor: 'bg-blue-100 text-blue-800 border-blue-300',
     accentColor: 'border-blue-500',
     bannerGradient: 'from-blue-700 to-indigo-900',

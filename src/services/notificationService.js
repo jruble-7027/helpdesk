@@ -1,5 +1,6 @@
 import { db } from './firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { DEFAULT_EMAIL_WEBHOOK_URL } from '../data/categoriesData';
 
 const CLOUD_FUNCTION_ENDPOINT = "https://us-central1-wca-tickets-58f6c.cloudfunctions.net/sendTicketNotification";
 
@@ -11,11 +12,16 @@ export function buildTicketEmailHtml({
   ticketTitle,
   headline,
   messageText,
+  messageHeader = null,
   statusLabel,
   statusColor = '#f59e0b',
   location,
   room,
   department,
+  assetType = null,
+  urgencyLabel = null,
+  submitterEmail = null,
+  attachments = [],
   actorName,
   ticketUrl,
   isWaiting = false
@@ -80,7 +86,7 @@ export function buildTicketEmailHtml({
               ${messageText ? `
               <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin-bottom: 24px;">
                 <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 8px; letter-spacing: 0.5px;">
-                  Response from ${actorName || 'Staff Member'}:
+                  ${messageHeader || `Response from ${actorName || 'Staff Member'}:`}
                 </div>
                 <div style="font-size: 14px; color: #1e293b; line-height: 1.6; white-space: pre-wrap;">
                   ${messageText}
@@ -104,6 +110,12 @@ export function buildTicketEmailHtml({
 
               <!-- Ticket Info Details Grid -->
               <table width="100%" cellspacing="0" cellpadding="0" style="margin-bottom: 28px; border-collapse: collapse;">
+                ${submitterEmail ? `
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; color: #64748b;">Submitted By</td>
+                  <td align="right" style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; font-weight: 600; color: #0f172a;">${actorName || 'Staff'} (${submitterEmail})</td>
+                </tr>
+                ` : ''}
                 <tr>
                   <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; color: #64748b;">Campus Location</td>
                   <td align="right" style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; font-weight: 600; color: #0f172a;">${location || 'Campus'}</td>
@@ -116,7 +128,28 @@ export function buildTicketEmailHtml({
                   <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; color: #64748b;">Department</td>
                   <td align="right" style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; font-weight: 600; color: #0f172a;">${department || 'Support'}</td>
                 </tr>
+                ${assetType ? `
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; color: #64748b;">Category / Asset</td>
+                  <td align="right" style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; font-weight: 600; color: #0f172a;">${assetType}</td>
+                </tr>
+                ` : ''}
+                ${urgencyLabel ? `
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; color: #64748b;">Urgency / Priority</td>
+                  <td align="right" style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; font-weight: 700; color: #0f172a; text-transform: capitalize;">${urgencyLabel}</td>
+                </tr>
+                ` : ''}
               </table>
+
+              ${attachments && attachments.length > 0 ? `
+              <div style="margin-bottom: 24px; padding: 12px 16px; background-color: #f8fafc; border-radius: 10px; border: 1px solid #e2e8f0;">
+                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 6px;">
+                  Attached Photos / Files (${attachments.length}):
+                </div>
+                ${attachments.map((att) => `<div style="font-size: 12px; margin-bottom: 4px;"><a href="${att.url}" target="_blank" style="color: #2563eb; font-weight: 600; text-decoration: underline;">${att.name || 'View Attachment'}</a></div>`).join('')}
+              </div>
+              ` : ''}
 
               <!-- Call to Action Button -->
               <table width="100%" cellspacing="0" cellpadding="0">
@@ -164,6 +197,7 @@ export async function sendTicketNotification({
   newStatus = null,
   newStatusLabel = null,
   actor = null,
+  recipientEmailOverride = null,
   webhookUrl = null
 }) {
   if (!ticket) return { success: false, error: 'No ticket provided' };
@@ -180,18 +214,28 @@ export async function sendTicketNotification({
   const location = ticket.location || ticket.building || 'Campus';
   const room = ticket.room || ticket.roomLocation || 'General';
   const department = ticket.areaName || ticket.department || 'Support';
-  const actorName = actor?.displayName || actor?.name || actor?.email?.split('@')[0] || 'Staff Member';
+  const actorName = actor?.displayName || actor?.name || ticket.createdByName || actor?.email?.split('@')[0] || 'Staff Member';
 
-  let recipientEmail = null;
+  let recipientEmail = recipientEmailOverride || null;
   let recipientName = null;
   let subject = '';
   let headline = '';
   let messageText = '';
+  let messageHeader = null;
   let statusLabel = newStatusLabel || ticket.status;
   let statusColor = '#3b82f6';
   let isWaiting = false;
 
-  if (type === 'status_change') {
+  if (type === 'created') {
+    recipientEmail = recipientEmailOverride || ticket.departmentNotifyEmails;
+    recipientName = `${department} Administrator`;
+    subject = `[${ticketNumber}] New ${department} Ticket: ${ticketTitle}`;
+    headline = `New ${department} Ticket Submitted`;
+    messageHeader = `Issue Description from ${actorName}:`;
+    messageText = ticket.description || ticket.selectedIssue || ticketTitle;
+    statusLabel = 'New Ticket';
+    statusColor = ticket.urgency === 'emergency' ? '#dc2626' : ticket.urgency === 'high' ? '#f59e0b' : '#2563eb';
+  } else if (type === 'status_change') {
     recipientEmail = ticket.createdByEmail || ticket.requester?.email;
     recipientName = ticket.createdByName || ticket.requester?.name || 'Requester';
     subject = `[${ticketNumber}] Status updated to ${statusLabel}`;
@@ -235,44 +279,60 @@ export async function sendTicketNotification({
     messageText = `You have been assigned to handle ticket ${ticketNumber} (${ticketTitle}) at ${location} - ${room}.`;
   }
 
-  if (!recipientEmail) {
-    console.warn('[NotificationService] No recipient email found for ticket:', ticketNumber);
-    return { success: false, error: 'No recipient email' };
+  // Normalize comma/semicolon-separated recipient emails
+  const emailList = String(recipientEmail || '')
+    .split(/[,;]+/)
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => e && e.includes('@'));
+
+  if (emailList.length === 0) {
+    console.warn('[NotificationService] No recipient email found for ticket:', ticketNumber, 'type:', type);
+    return { success: false, error: 'No recipient email configured' };
   }
+
+  const normalizedTo = emailList.join(', ');
+  const activeWebhookUrl = (webhookUrl && webhookUrl.trim()) || DEFAULT_EMAIL_WEBHOOK_URL;
 
   const htmlBody = buildTicketEmailHtml({
     ticketNumber,
     ticketTitle,
     headline,
     messageText,
+    messageHeader,
     statusLabel,
     statusColor,
     location,
     room,
     department,
+    assetType: type === 'created' ? (ticket.assetType ? `${ticket.assetType}${ticket.assetTag && ticket.assetTag !== 'N/A' ? ` (${ticket.assetTag})` : ''}` : null) : null,
+    urgencyLabel: type === 'created' ? (ticket.urgency || 'medium') : null,
+    submitterEmail: type === 'created' ? (ticket.createdByEmail || null) : null,
+    attachments: type === 'created' ? (ticket.attachments || []) : [],
     actorName,
     ticketUrl,
     isWaiting
   });
 
-  const plainText = `${headline}\n\nTicket: ${ticketTitle} (${ticketNumber})\nLocation: ${location} - Room: ${room}\nStatus: ${statusLabel}\n\n${messageText}\n\nView & Reply: ${ticketUrl}`;
+  const plainText = `${headline}\n\nTicket: ${ticketTitle} (${ticketNumber})\nSubmitted By: ${actorName} (${ticket.createdByEmail || ''})\nLocation: ${location} - Room: ${room}\nDepartment: ${department}\nStatus: ${statusLabel}\n\n${messageText}\n\nView & Reply: ${ticketUrl}`;
 
-  // 1. Save in-app notification in Firestore
+  // 1. Save in-app notification in Firestore for each recipient
   try {
-    await addDoc(collection(db, 'notifications'), {
-      recipientEmail: recipientEmail.toLowerCase(),
-      recipientName,
-      subject,
-      summary: messageText.slice(0, 160),
-      ticketId: ticket.id,
-      ticketNumber,
-      ticketTitle,
-      type,
-      authorName: actorName,
-      authorEmail: actor?.email || null,
-      read: false,
-      createdAt: serverTimestamp()
-    });
+    for (const singleEmail of emailList) {
+      await addDoc(collection(db, 'notifications'), {
+        recipientEmail: singleEmail,
+        recipientName,
+        subject,
+        summary: messageText.slice(0, 160),
+        ticketId: ticket.id,
+        ticketNumber,
+        ticketTitle,
+        type,
+        authorName: actorName,
+        authorEmail: actor?.email || ticket.createdByEmail || null,
+        read: false,
+        createdAt: serverTimestamp()
+      });
+    }
   } catch (err) {
     console.warn('[NotificationService] In-app notification write warning:', err);
   }
@@ -280,7 +340,7 @@ export async function sendTicketNotification({
   // 2. Queue in Firestore 'mail' collection (for Firebase Trigger Email extension)
   try {
     await addDoc(collection(db, 'mail'), {
-      to: [recipientEmail.toLowerCase()],
+      to: emailList,
       message: {
         subject,
         text: plainText,
@@ -303,7 +363,7 @@ export async function sendTicketNotification({
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        to: recipientEmail,
+        to: normalizedTo,
         recipientName,
         subject,
         html: htmlBody,
@@ -313,9 +373,9 @@ export async function sendTicketNotification({
         ticketId: ticket.id,
         type,
         authorName: actorName,
-        authorEmail: actor?.email,
+        authorEmail: actor?.email || ticket.createdByEmail,
         isInternal: false,
-        webhookUrl: webhookUrl || null
+        webhookUrl: activeWebhookUrl
       })
     });
 

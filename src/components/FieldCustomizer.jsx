@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { saveCatalogSettings } from '../services/firebase';
 import { sendTestNotificationEmail } from '../services/notificationService';
-import { AREAS as DEFAULT_AREAS, BUILDINGS as DEFAULT_BUILDINGS, DEFAULT_PLACES } from '../data/categoriesData';
+import { AREAS as DEFAULT_AREAS, BUILDINGS as DEFAULT_BUILDINGS, DEFAULT_PLACES, DEFAULT_EMAIL_WEBHOOK_URL } from '../data/categoriesData';
 
 // --- CSV Parsing & Export Helpers ---
 function parseCsvContent(text) {
@@ -173,7 +173,7 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
   const [areas, setAreas] = useState(catalog?.areas || DEFAULT_AREAS);
 
   // Email & Notifications settings
-  const [emailWebhookUrl, setEmailWebhookUrl] = useState(catalog?.emailWebhookUrl || '');
+  const [emailWebhookUrl, setEmailWebhookUrl] = useState(catalog?.emailWebhookUrl || DEFAULT_EMAIL_WEBHOOK_URL);
   const [testRecipient, setTestRecipient] = useState('jruble@wcatrojans.org');
   const [isSavingEmailSettings, setIsSavingEmailSettings] = useState(false);
   const [emailSaveSuccess, setEmailSaveSuccess] = useState(false);
@@ -188,10 +188,16 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
       setBuildings(catalog.buildings);
     }
     if (catalog?.areas) setAreas(catalog.areas);
-    if (catalog?.emailWebhookUrl !== undefined) {
+    if (catalog?.emailWebhookUrl) {
       setEmailWebhookUrl(catalog.emailWebhookUrl);
     }
   }, [catalog]);
+
+  const handleAreaNotifyEmailChange = (areaId, value) => {
+    setAreas((prev) =>
+      prev.map((a) => (a.id === areaId ? { ...a, notifyEmails: value } : a))
+    );
+  };
 
   // Place / Campus editing states
   const [editingPlace, setEditingPlace] = useState(null);
@@ -1079,6 +1085,39 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
       {/* --- TABS 2, 3, 4: DEPARTMENT ASSETS & PRE-DEFINED ISSUES --- */}
       {activeTab !== 'buildings' && activeArea && (
         <div className="space-y-6">
+          {/* Section 0: Department Administrator Notification Email(s) */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-amber-600" />
+                  <span>{activeArea.name} — New Ticket Admin Notification Email(s)</span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Whenever a staff member submits a new <strong>{activeArea.shortName}</strong> ticket, an immediate email alert will be sent to the address(es) below (comma-separated for multiple).
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2 pt-1">
+              <input
+                type="text"
+                value={activeArea.notifyEmails ?? ''}
+                onChange={(e) => handleAreaNotifyEmailChange(activeArea.id, e.target.value)}
+                placeholder={activeArea.id === 'itsm' ? 'jruble@wcatrojans.org' : 'admin@wcatrojans.org, lead@wcatrojans.org'}
+                className="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm focus:ring-2 focus:ring-amber-500 font-medium"
+              />
+              <button
+                type="button"
+                onClick={() => persistChanges(places, areas)}
+                disabled={saving}
+                className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs sm:text-sm transition-colors flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                <span>{saving ? 'Saving...' : 'Save Admin Email(s)'}</span>
+              </button>
+            </div>
+          </div>
+
           {/* Section 1: Asset Categories */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
@@ -1383,14 +1422,49 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
               </div>
             </div>
 
-            {/* Webhook Configuration Form */}
-            <form onSubmit={handleSaveEmailSettings} className="space-y-4 pt-2 border-t border-slate-100">
-              <div className="space-y-1.5">
+            {/* Webhook Configuration & Department Routing Form */}
+            <form onSubmit={handleSaveEmailSettings} className="space-y-6 pt-2 border-t border-slate-100">
+              {/* Per-Department New Ticket Routing */}
+              <div className="space-y-3">
+                <div>
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-purple-600" />
+                    <span>New Ticket Submission Alerts — Department Administrator Routing</span>
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Specify which administrator email(s) receive an instant notification when a new ticket is submitted under each menu selection. Separate multiple emails with commas.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {areas.map((dept) => (
+                    <div key={dept.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2">
+                      <label className="block text-xs font-extrabold text-slate-800">
+                        {dept.name}
+                      </label>
+                      <input
+                        type="text"
+                        value={dept.notifyEmails ?? ''}
+                        onChange={(e) => handleAreaNotifyEmailChange(dept.id, e.target.value)}
+                        placeholder={dept.id === 'itsm' ? 'jruble@wcatrojans.org' : 'Enter admin email(s)...'}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-medium focus:ring-2 focus:ring-purple-500"
+                      />
+                      <p className="text-[11px] text-slate-500">
+                        {dept.notifyEmails?.trim()
+                          ? `Notifies: ${dept.notifyEmails}`
+                          : 'No new-ticket alert recipient set yet'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5 pt-2 border-t border-slate-100">
                 <label className="block text-xs sm:text-sm font-bold text-slate-800">
-                  Outbound Google Apps Script Webhook URL (Optional)
+                  Outbound Google Apps Script Webhook URL
                 </label>
                 <p className="text-xs text-slate-500">
-                  By default, notifications are processed via the Firebase Cloud Function (<code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-mono">sendTicketNotification</code>) and queued in Firestore (<code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-mono">mail</code> collection). If you have deployed the Google Apps Script Web App from <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-mono">google-apps-script/WCA_Helpdesk_Email_Dispatcher.gs</code>, paste its Web App URL below for direct Gmail delivery.
+                  Connected to your Google Workspace Web App (<code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-mono">helpdesk@wcatrojans.org</code>) from <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-mono">google-apps-script/WCA_Helpdesk_Email_Dispatcher.gs</code> for direct Gmail delivery.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-2 mt-2">
                   <input
@@ -1406,7 +1480,7 @@ export default function FieldCustomizer({ catalog, onCatalogUpdate }) {
                     className="px-5 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-xl text-xs sm:text-sm shadow-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     <Save className="w-4 h-4" />
-                    <span>{isSavingEmailSettings ? 'Saving...' : 'Save Webhook URL'}</span>
+                    <span>{isSavingEmailSettings ? 'Saving...' : 'Save Email Settings'}</span>
                   </button>
                 </div>
                 {emailSaveSuccess && (

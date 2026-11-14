@@ -60,11 +60,11 @@ function doPost(e) {
 }
 
 /**
- * Periodically checks Gmail for new tickets sent to it-tickets@wcatrojans.org
+ * Periodically checks Gmail for new tickets sent to helpdesk@wcatrojans.org (or legacy it-tickets@wcatrojans.org)
  * (Set this function on a 1-minute or 5-minute time-driven trigger)
  */
 function processInboundHelpdeskEmails() {
-  var query = 'to:it-tickets@wcatrojans.org is:unread';
+  var query = 'to:(helpdesk@wcatrojans.org OR it-tickets@wcatrojans.org) is:unread';
   var threads = GmailApp.search(query, 0, 10);
 
   for (var t = 0; t < threads.length; t++) {
