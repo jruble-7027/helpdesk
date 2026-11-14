@@ -1,15 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Calendar, RefreshCw, ExternalLink, Printer, Sparkles, Building, Clock, Info, CheckCircle2, Sliders, X, Check, Code } from 'lucide-react';
+import { Calendar, RefreshCw, ExternalLink, Printer, Sparkles, Building, Clock, Info, CheckCircle2, Sliders, X, Check, Code, Bell, BellOff, Volume2, VolumeX, Mail } from 'lucide-react';
+import { DEFAULT_CALENDAR_ALERT_SETTINGS } from '../services/notificationService';
 
 export default function FacilitiesCalendar({ 
   onNavigateToSubmit, 
   calendarViewId = "534e7bd4-91df-f111-bf5b-6045bdb05b62", 
   onUpdateCalendarViewId,
+  calendarAlertSettings = DEFAULT_CALENDAR_ALERT_SETTINGS,
+  onUpdateCalendarAlertSettings,
+  onTriggerTestCalendarAlert,
   isAdmin = false 
 }) {
   const [activeViewId, setActiveViewId] = useState(calendarViewId);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [inputSnippetOrId, setInputSnippetOrId] = useState(calendarViewId);
+  const [alertPrefs, setAlertPrefs] = useState({
+    ...DEFAULT_CALENDAR_ALERT_SETTINGS,
+    ...(calendarAlertSettings || {})
+  });
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -19,6 +27,23 @@ export default function FacilitiesCalendar({
     setActiveViewId(calendarViewId);
     setInputSnippetOrId(calendarViewId);
   }, [calendarViewId]);
+
+  useEffect(() => {
+    if (calendarAlertSettings) {
+      setAlertPrefs({
+        ...DEFAULT_CALENDAR_ALERT_SETTINGS,
+        ...calendarAlertSettings
+      });
+    }
+  }, [calendarAlertSettings]);
+
+  const handleQuickTogglePref = async (key) => {
+    const updated = { ...alertPrefs, [key]: !alertPrefs[key] };
+    setAlertPrefs(updated);
+    if (onUpdateCalendarAlertSettings) {
+      await onUpdateCalendarAlertSettings(updated);
+    }
+  };
 
   const handleRefresh = () => {
     setLoading(true);
@@ -49,7 +74,9 @@ export default function FacilitiesCalendar({
     setActiveViewId(cleanId);
     setInputSnippetOrId(cleanId);
     if (onUpdateCalendarViewId) {
-      await onUpdateCalendarViewId(cleanId);
+      await onUpdateCalendarViewId(cleanId, alertPrefs);
+    } else if (onUpdateCalendarAlertSettings) {
+      await onUpdateCalendarAlertSettings(alertPrefs);
     }
     setSaveSuccess(true);
     setRefreshKey(prev => prev + 1);
@@ -288,14 +315,30 @@ export default function FacilitiesCalendar({
           {/* Action Toolbar */}
           <div className="flex items-center gap-2 flex-wrap">
             {isAdmin && (
-              <button
-                onClick={() => setShowConfigModal(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 transition-all shadow-sm"
-                title="Configure Incident IQ View ID or paste new embed code"
-              >
-                <Sliders className="w-4 h-4 text-amber-700" />
-                <span>Filter Settings</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleQuickTogglePref('soundEnabled')}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all shadow-sm ${
+                    alertPrefs.soundEnabled
+                      ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-500 border-slate-200'
+                  }`}
+                  title={alertPrefs.soundEnabled ? 'Audio Chime ON for new events (click to mute)' : 'Audio Chime Muted (click to unmute)'}
+                >
+                  {alertPrefs.soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-600" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+                  <span className="hidden sm:inline">{alertPrefs.soundEnabled ? 'Chime On' : 'Chime Muted'}</span>
+                </button>
+
+                <button
+                  onClick={() => setShowConfigModal(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 transition-all shadow-sm"
+                  title="Configure Calendar Alerts (Pop-up, Sound, Email) and Incident IQ View ID"
+                >
+                  <Sliders className="w-4 h-4 text-amber-700" />
+                  <span>Filter &amp; Alert Settings</span>
+                </button>
+              </>
             )}
 
             <button
@@ -392,14 +435,14 @@ export default function FacilitiesCalendar({
 
       </div>
 
-      {/* Filter Configuration Modal for Admins */}
+      {/* Filter & Alert Configuration Modal for Admins */}
       {showConfigModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden animate-fadeIn">
-            <div className="bg-[#0b1c2d] px-6 py-4 flex items-center justify-between text-white">
+          <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden animate-fadeIn max-h-[92vh] flex flex-col">
+            <div className="bg-[#0b1c2d] px-6 py-4 flex items-center justify-between text-white flex-shrink-0">
               <div className="flex items-center gap-2">
                 <Sliders className="w-5 h-5 text-amber-400" />
-                <h3 className="font-extrabold text-base tracking-wide">Incident IQ Calendar Filter</h3>
+                <h3 className="font-extrabold text-base tracking-wide">Calendar Alerts &amp; Incident IQ Filter</h3>
               </div>
               <button 
                 onClick={() => setShowConfigModal(false)}
@@ -409,24 +452,114 @@ export default function FacilitiesCalendar({
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
-              <p className="text-xs text-slate-600 leading-relaxed">
-                If you ever change your calendar view or event filter inside Incident IQ, you can update it here. You can paste either the <span className="font-bold text-slate-800">raw View ID</span> or the <span className="font-bold text-slate-800">entire embedded script</span> provided by Incident IQ (we'll extract the ID automatically!).
-              </p>
+            <div className="p-6 space-y-5 overflow-y-auto flex-1">
+              {/* Section 1: New Event Alert Channels (Can be silenced individually) */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                      <Bell className="w-4 h-4 text-amber-600" />
+                      <span>New Calendar Event Notifications</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Automatically detects when new events appear on the Incident IQ schedule. Silence any channel independently below:
+                    </p>
+                  </div>
+                  {onTriggerTestCalendarAlert && (
+                    <button
+                      type="button"
+                      onClick={() => onTriggerTestCalendarAlert(alertPrefs)}
+                      className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-amber-50 text-slate-800 border border-slate-300 text-[11px] font-bold shadow-2xs whitespace-nowrap transition-colors"
+                    >
+                      Test Pop-Up &amp; Chime
+                    </button>
+                  )}
+                </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
+                {/* 3 Independent Toggles */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <label className={`flex items-center justify-between p-2.5 rounded-lg border cursor-pointer transition-colors ${alertPrefs.popupEnabled ? 'bg-white border-amber-300 shadow-2xs' : 'bg-slate-100/70 border-slate-200 opacity-75'}`}>
+                    <div className="flex items-center gap-2">
+                      {alertPrefs.popupEnabled ? <Bell className="w-4 h-4 text-amber-600" /> : <BellOff className="w-4 h-4 text-slate-400" />}
+                      <div>
+                        <div className="text-xs font-bold text-slate-800">Pop-Up Banner</div>
+                        <div className="text-[10px] text-slate-500">{alertPrefs.popupEnabled ? 'Active' : 'Silenced'}</div>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(alertPrefs.popupEnabled)}
+                      onChange={(e) => setAlertPrefs({ ...alertPrefs, popupEnabled: e.target.checked })}
+                      className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+                    />
+                  </label>
+
+                  <label className={`flex items-center justify-between p-2.5 rounded-lg border cursor-pointer transition-colors ${alertPrefs.soundEnabled ? 'bg-white border-emerald-300 shadow-2xs' : 'bg-slate-100/70 border-slate-200 opacity-75'}`}>
+                    <div className="flex items-center gap-2">
+                      {alertPrefs.soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-600" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+                      <div>
+                        <div className="text-xs font-bold text-slate-800">Audio Chime</div>
+                        <div className="text-[10px] text-slate-500">{alertPrefs.soundEnabled ? 'Beep On' : 'Muted'}</div>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(alertPrefs.soundEnabled)}
+                      onChange={(e) => setAlertPrefs({ ...alertPrefs, soundEnabled: e.target.checked })}
+                      className="w-4 h-4 accent-emerald-600 rounded cursor-pointer"
+                    />
+                  </label>
+
+                  <label className={`flex items-center justify-between p-2.5 rounded-lg border cursor-pointer transition-colors ${alertPrefs.emailEnabled ? 'bg-white border-blue-300 shadow-2xs' : 'bg-slate-100/70 border-slate-200 opacity-75'}`}>
+                    <div className="flex items-center gap-2">
+                      <Mail className={`w-4 h-4 ${alertPrefs.emailEnabled ? 'text-blue-600' : 'text-slate-400'}`} />
+                      <div>
+                        <div className="text-xs font-bold text-slate-800">Email Alert</div>
+                        <div className="text-[10px] text-slate-500">{alertPrefs.emailEnabled ? 'Sending' : 'Silenced'}</div>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(alertPrefs.emailEnabled)}
+                      onChange={(e) => setAlertPrefs({ ...alertPrefs, emailEnabled: e.target.checked })}
+                      className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
+                    />
+                  </label>
+                </div>
+
+                {/* Email Recipient Input */}
+                <div className="pt-1">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Calendar Alert Recipient Email(s) <span className="font-normal text-slate-400">(comma-separated)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={alertPrefs.notifyEmails ?? ''}
+                    onChange={(e) => setAlertPrefs({ ...alertPrefs, notifyEmails: e.target.value })}
+                    disabled={!alertPrefs.emailEnabled}
+                    placeholder="jruble@wcatrojans.org, facilities@wcatrojans.org"
+                    className="w-full px-3 py-2 text-xs font-medium bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-400"
+                  />
+                </div>
+              </div>
+
+              {/* Section 2: Incident IQ View ID Filter */}
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                   <Code className="w-3.5 h-3.5 text-amber-600" />
                   <span>Incident IQ View ID or Embed Code</span>
                 </label>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Paste either the <span className="font-bold text-slate-700">raw View ID</span> or the <span className="font-bold text-slate-700">entire embedded script</span> from Incident IQ.
+                </p>
                 <textarea
-                  rows={4}
+                  rows={3}
                   value={inputSnippetOrId}
                   onChange={(e) => setInputSnippetOrId(e.target.value)}
                   placeholder="Paste View ID (e.g. 534e7bd4-91df-f111-bf5b-6045bdb05b62) or full Incident IQ embed code snippet..."
                   className="w-full text-xs font-mono p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none"
                 />
-                <p className="text-[11px] text-slate-400 mt-1">
+                <p className="text-[11px] text-slate-400">
                   Current Active ID: <span className="font-mono text-slate-600">{activeViewId}</span>
                 </p>
               </div>
@@ -434,11 +567,11 @@ export default function FacilitiesCalendar({
               {saveSuccess && (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2">
                   <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                  <span className="font-bold">Calendar filter updated and reloaded successfully!</span>
+                  <span className="font-bold">Calendar alert &amp; filter settings saved!</span>
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-3 pt-2">
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setShowConfigModal(false)}
@@ -451,7 +584,7 @@ export default function FacilitiesCalendar({
                   onClick={handleSaveFilter}
                   className="px-5 py-2 text-xs font-black bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl transition-colors shadow-md shadow-amber-500/20"
                 >
-                  Save & Apply Filter
+                  Save Settings
                 </button>
               </div>
             </div>

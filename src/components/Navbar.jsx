@@ -18,7 +18,8 @@ export default function Navbar({
   user, 
   userProfile, 
   currentView, 
-  setCurrentView 
+  setCurrentView,
+  calendarNewCount = 0
 }) {
   const role = userProfile?.role || 'requester';
   const roleConfig = ROLES[role] || ROLES.requester;
@@ -112,6 +113,11 @@ export default function Navbar({
               <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
               <span className="hidden xl:inline">Facility Calendar</span>
               <span className="xl:hidden">Calendar</span>
+              {calendarNewCount > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.5 text-[10px] font-black rounded-full bg-rose-500 text-white animate-pulse">
+                  {calendarNewCount} NEW
+                </span>
+              )}
             </button>
 
             {/* Fleet & Device Inventory (IT & Admins Only) */}
@@ -260,6 +266,11 @@ export default function Navbar({
           >
             <Calendar className="w-3.5 h-3.5" />
             <span>Facility Calendar</span>
+            {calendarNewCount > 0 && (
+              <span className="ml-0.5 px-1.5 py-0.5 text-[10px] font-black rounded-full bg-rose-500 text-white">
+                {calendarNewCount}
+              </span>
+            )}
           </button>
 
           {isItOrAdmin && (
